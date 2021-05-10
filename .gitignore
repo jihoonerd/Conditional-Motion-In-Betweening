@@ -4,6 +4,8 @@ log/*
 model_weights/*
 results/*
 PyMO
+ubisoft-laforge-animation-dataset/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
