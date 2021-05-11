@@ -21,6 +21,7 @@ model:
     learning_rate: 0.001
     optim_beta1: 0.5
     optim_beta2: 0.9
+    infogan_code: 4
     
 log:
     weight_save_interval: 10

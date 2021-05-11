@@ -2,7 +2,20 @@ import json
 import os
 
 import numpy as np
+import torch
 from rmi.data.quaternion import euler_to_quaternion, qeuler_np
+
+
+def append_infogan_code(input_data, discrete_code_dim, device):
+    """Append discrete infogan latent code to given input data"""
+
+    num_samples = input_data.shape[0]
+
+    if discrete_code_dim != 0:
+        label_idx = torch.randint(low=0, high=discrete_code_dim, size=(num_samples,))
+        discrete_code = torch.nn.functional.one_hot(label_idx)
+    return_vec = torch.cat([input_data, discrete_code], dim=1)
+    return return_vec, label_idx
 
 
 def write_json(filename, local_q, root_pos, joint_names):
