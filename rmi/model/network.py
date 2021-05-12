@@ -70,7 +70,7 @@ class Decoder(nn.Module):
 
 class Discriminator(nn.Module):
     # refer: 3.5 Motion discriminators, 3.7.2 sliding critics
-    def __init__(self, input_dim=128, hidden_dim=512, out_dim=1, length=3):
+    def __init__(self, input_dim=128, hidden_dim=128, out_dim=1, length=3):
         super().__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
@@ -94,3 +94,45 @@ class Discriminator(nn.Module):
         x = self.relu(x)
         x = self.fc3(x)
         return x
+
+
+class InfoGANDiscriminator(nn.Module):
+    # refer: 3.5 Motion discriminators, 3.7.2 sliding critics
+    def __init__(self, input_dim=128, hidden_dim=128, discrete_code_dim=4, out_dim=1, length=3):
+        super().__init__()
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.out_dim = out_dim
+        self.discrete_code_dim = discrete_code_dim
+        self.length = length
+
+        self.regular_gan = nn.Sequential(
+            nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=self.length),
+            nn.ReLU(),
+            nn.Conv1d(self.hidden_dim, self.hidden_dim // 2, kernel_size=1),
+            nn.ReLU(),
+            nn.Conv1d(self.hidden_dim // 2, out_dim, kernel_size=1),
+        )
+
+        self.infogan_q = nn.Sequential(
+            nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=self.length),
+            nn.LeakyReLU(0.1),
+            nn.Conv1d(self.hidden_dim, self.hidden_dim // 2, kernel_size=1),
+            nn.LeakyReLU(0.1),
+            nn.Conv1d(self.hidden_dim // 2, discrete_code_dim, kernel_size=1),
+        )
+
+        self.sigmoid = nn.Sigmoid()
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, x):
+        regular_gan_out = self.sigmoid(self.regular_gan(x))
+        q_out = self.infogan_q(x) # TODO: Discriminator 설계 윈도우로 한번에 처리하는게 맞을까.
+        # appendix보면 위치정보 기반으로 윈도우 한번에 평균내버림 코드에 의해 만들어진 모션의 집합이니깐 그냥 써도 괜찮지 않을까?
+        # 그러면 discriminator loss BCE는 어떻게 처리하지. LSGAN은 평균내서 square해버린다.
+        # 모션 전체에 대해서 평균 후 판단. 각각의 윈도우에서 gan out이 있는데 전체 평균
+        # 대응해보면 각각의 infogan out에 대ㅐ서 전체 평균, 여기서는 BCE의 평균을 해야하지 않을까
+        # [IMPORTANT] 야 discriminator 건드릴 필요가 있나? 그냥 gan loss쓰면되고 generator loss만 반영하면 될 것 같은데? 확인해보자.
+        q_out_mean = torch.mean(q_out, dim=2)
+        q_discrete = self.softmax(q_out_mean)
+        return regular_gan_out, q_discrete
