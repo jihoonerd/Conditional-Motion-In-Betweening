@@ -4,17 +4,17 @@ data:
     skeleton_path: 'ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh'
 
 device:
-    gpu_id: 1
+    gpu_id: 0
 
 model:
-    batch_size: 256
+    batch_size: 32
     epochs: 400
     loss_quat_weight: 1.0
     loss_root_weight: 1.0
-    loss_pos_weight: 0.75
+    loss_pos_weight: 0.5
     loss_contact_weight: 0.1
-    loss_discriminator_weight: 0.0001
-    loss_generator_weight: 0.0001
+    loss_discriminator_weight: 0.1
+    loss_generator_weight: 0.1
     target_noise: 0.5
     saved_weight_path: 'model_weights/test_weights'
     save_optimizer: False
