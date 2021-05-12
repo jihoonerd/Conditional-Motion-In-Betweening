@@ -4,6 +4,7 @@ from datetime import datetime
 
 import numpy as np
 import torch
+import torch.nn as nn
 import yaml
 from kpt.model.skeleton import TorchSkeleton
 from pymo.parsers import BVHParser
@@ -11,9 +12,10 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from rmi.data.utils import flip_bvh
 from rmi.data.lafan1_dataset import LAFAN1Dataset
-from rmi.model.network import Decoder, Discriminator, InputEncoder, LSTMNetwork
+from rmi.data.utils import flip_bvh, generate_infogan_code
+from rmi.model.network import (Decoder, InfoGANDiscriminator, InputEncoder,
+                               LSTMNetwork)
 from rmi.model.noise_injector import noise_injector
 from rmi.model.positional_encoding import PositionalEncoding
 
@@ -45,10 +47,12 @@ def train():
     root_v_dim = lafan_dataset.root_v_dim
     local_q_dim = lafan_dataset.local_q_dim
     contact_dim = lafan_dataset.contact_dim
+    ig_d_code_dim = infogan_code
 
     # Initializing networks
     state_in = root_v_dim + local_q_dim + contact_dim
-    state_encoder = InputEncoder(input_dim=state_in)
+    infogan_in = state_in + ig_d_code_dim
+    state_encoder = InputEncoder(input_dim=infogan_in)
     state_encoder.to(device)
 
     offset_in = root_v_dim + local_q_dim
@@ -69,10 +73,12 @@ def train():
     decoder.to(device)
 
     discriminator_in = lafan_dataset.num_joints * 3 * 2 # See Appendix
-    short_discriminator = Discriminator(input_dim=discriminator_in, length=3)
+    short_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=ig_d_code_dim, length=3)
     short_discriminator.to(device)
-    long_discriminator = Discriminator(input_dim=discriminator_in, length=10)
+    long_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=ig_d_code_dim, length=10)
     long_discriminator.to(device)
+
+    infogan_disc_loss = nn.NLLLoss()
 
     pe = PositionalEncoding(dimension=256, max_len=50, device=device)
 
@@ -90,7 +96,6 @@ def train():
                                     lr=config['model']['learning_rate'],
                                     betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
                                     amsgrad=True)
-
 
     for epoch in tqdm(range(config['model']['epochs']), position=0, desc="Epoch"):
         state_encoder.train()
@@ -131,6 +136,9 @@ def train():
             # 3.4: target noise is sampled once per sequence
             target_noise = torch.normal(mean=0, std=config['model']['target_noise'], size=(current_batch_size, 256 * 2), device=device)
 
+            # InfoGAN code (per motion)
+            infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=ig_d_code_dim, device=device)
+
             # Generating Frames. It uses fixed 50 frames of generation for now.
             for t in range(lafan_dataset.cur_seq_length - 1):
                 if t  == 0: # if initial frame
@@ -148,7 +156,8 @@ def train():
                 assert root_p_offset.shape == root_p_t.shape
 
                 # state input
-                state_input = torch.cat([local_q_t, root_v_t, contact_t], -1)
+                vanilla_state_input = torch.cat([local_q_t, root_v_t, contact_t], -1)
+                state_input = torch.cat([vanilla_state_input, infogan_code_gen], dim=1)
                 # offset input
                 root_p_offset_t = root_p_offset - root_p_t
                 local_q_offset_t = local_q_offset - local_q_t
@@ -218,17 +227,28 @@ def train():
             ## Discriminator
             discriminator_optimizer.zero_grad()
 
-            # LSGAN Loss
-            short_fake_logits = torch.mean(short_discriminator(fake_input.detach())[:,0], dim=1)
-            short_real_logits = torch.mean(short_discriminator(real_input)[:,0], dim=1)
-            short_d_fake_loss = torch.mean((short_fake_logits) ** 2)  
-            short_d_real_loss = torch.mean((short_real_logits -  1) ** 2)
+            # InfoGAN Loss (maintain LSGAN for original gal V(D,G))
+            short_fake_gan_out, _ = short_discriminator(fake_input.detach())
+            short_fake_gan_score = torch.mean(short_fake_gan_out[:,0], dim=1)
+
+            short_real_gan_out, _ = short_discriminator(real_input)
+            short_real_gan_score = torch.mean(short_real_gan_out[:,0], dim=1)
+
+            short_d_fake_loss = torch.mean((short_fake_gan_score) ** 2)  
+            short_d_real_loss = torch.mean((short_real_gan_score -  1) ** 2)
+
             short_d_loss = (short_d_fake_loss + short_d_real_loss) / 2.0
 
-            long_fake_logits = torch.mean(long_discriminator(fake_input.detach())[:,0], dim=1)
-            long_real_logits = torch.mean(long_discriminator(real_input)[:,0], dim=1)
-            long_d_fake_loss = torch.mean((long_fake_logits) ** 2)
-            long_d_real_loss = torch.mean((long_real_logits -  1) ** 2)
+
+            long_fake_gan_out, _ = long_discriminator(fake_input.detach())
+            long_fake_gan_score = torch.mean(long_fake_gan_out[:,0], dim=1)
+
+            long_real_gan_out, _ = long_discriminator(real_input)
+            long_real_gan_score = torch.mean(long_real_gan_out[:,0], dim=1)
+
+            long_d_fake_loss = torch.mean((long_fake_gan_score) ** 2)
+            long_d_real_loss = torch.mean((long_real_gan_score -  1) ** 2)
+
             long_d_loss = (long_d_fake_loss + long_d_real_loss) / 2.0
 
             total_d_loss = config['model']['loss_discriminator_weight'] * (long_d_loss + short_d_loss)
@@ -243,11 +263,17 @@ def train():
                          config['model']['loss_contact_weight'] * loss_contact
             
             # Adversarial
-            short_fake_logits = torch.mean(short_discriminator(fake_input)[:,0], 1)
-            short_g_loss = torch.mean((short_fake_logits -  1) ** 2)
-            long_fake_logits = torch.mean(long_discriminator(fake_input)[:,0], 1)
-            long_g_loss = torch.mean((long_fake_logits -  1) ** 2)
-            total_g_loss = config['model']['loss_generator_weight'] * (long_g_loss + short_g_loss)
+            short_fake_gan_out, short_fake_q_discrete = short_discriminator(fake_input)
+            short_g_score = torch.mean(short_fake_gan_out[:,0], dim=1)
+            short_g_loss = torch.mean((short_g_score -  1) ** 2)
+            short_disc_code_loss = infogan_disc_loss(short_fake_q_discrete, fake_indices)
+
+            long_fake_gan_out, long_fake_q_discrete = long_discriminator(fake_input)
+            long_g_score = torch.mean(long_fake_gan_out[:,0], dim=1)
+            long_g_loss = torch.mean((long_g_score -  1) ** 2)
+            long_disc_code_loss = infogan_disc_loss(long_fake_q_discrete, fake_indices)
+
+            total_g_loss = config['model']['loss_generator_weight'] * (long_g_loss + long_disc_code_loss + short_g_loss + short_disc_code_loss)
             loss_total += total_g_loss
 
             # TOTAL LOSS
