@@ -7,7 +7,7 @@ device:
     gpu_id: 0
 
 model:
-    batch_size: 32
+    batch_size: 128
     epochs: 400
     loss_quat_weight: 1.0
     loss_root_weight: 1.0
@@ -24,7 +24,7 @@ model:
     infogan_code: 4
     
 log:
-    weight_save_interval: 10
+    weight_save_interval: 5
 
 test:
     num_gifs: 30
