@@ -1,1 +1,1 @@
-# Motion-In-betweening-wtih-InfoGAN
+# Motion-In-betweening-with-InfoGAN
