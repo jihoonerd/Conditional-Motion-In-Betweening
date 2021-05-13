@@ -25,6 +25,8 @@ def test():
     # Set device to use
     gpu_id = config['device']['gpu_id']
     device = torch.device("cpu")
+    infogan_code = config['model']['infogan_code']
+    conditioning_code = config['test']['conditioning_code']
 
     # Prepare Directory
     time_stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -48,10 +50,12 @@ def test():
     root_v_dim = lafan_dataset_test.root_v_dim
     local_q_dim = lafan_dataset_test.local_q_dim
     contact_dim = lafan_dataset_test.contact_dim
+    ig_d_code_dim = infogan_code
 
     # Initializing networks
     state_in = root_v_dim + local_q_dim + contact_dim
-    state_encoder = InputEncoder(input_dim=state_in)
+    infogan_in = state_in + ig_d_code_dim
+    state_encoder = InputEncoder(input_dim=infogan_in)
     state_encoder.to(device)
     state_encoder.load_state_dict(torch.load(os.path.join(saved_weight_path, 'state_encoder.pkl'), map_location=device))
 
@@ -112,6 +116,10 @@ def test():
 
             lstm.init_hidden(current_batch_size)
 
+            # InfoGAN code
+            infogan_code_gen = torch.zeros(current_batch_size, infogan_code)
+            infogan_code_gen[:,conditioning_code] = 1
+
             # Generating Frames. It uses fixed 50 frames of generation for now.
             for t in range(lafan_dataset_test.cur_seq_length - 1): # cur seq length = 50
                 # root pos
@@ -130,7 +138,8 @@ def test():
                 assert root_p_offset.shape == root_p_t.shape
 
                 # state input
-                state_input = torch.cat([local_q_t, root_v_t, contact_t], -1)
+                vanilla_state_input = torch.cat([local_q_t, root_v_t, contact_t], -1)
+                state_input = torch.cat([vanilla_state_input, infogan_code_gen], dim=1)
                 # offset input
                 root_p_offset_t = root_p_offset - root_p_t
                 local_q_offset_t = local_q_offset - local_q_t
