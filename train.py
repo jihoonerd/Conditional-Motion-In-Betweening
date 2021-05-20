@@ -40,7 +40,7 @@ def train():
 
     # Flip, Load and preprocess data. It utilizes LAFAN1 utilities
     flip_bvh(config['data']['data_dir'])
-    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device)
+    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, cur_seq_length=5, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=config['model']['batch_size'], shuffle=True, num_workers=config['data']['data_loader_workers'])
 
     # Extract dimension from processed data
@@ -65,22 +65,22 @@ def train():
 
     # LSTM
     lstm_in = state_encoder.out_dim * 3
-    lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_in*2, device=device)
+    lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_in, device=device)
     lstm.to(device)
 
     # Decoder
-    decoder = Decoder(input_dim=lstm_in*2, out_dim=state_in)
+    decoder = Decoder(input_dim=lstm_in, out_dim=state_in)
     decoder.to(device)
 
     discriminator_in = lafan_dataset.num_joints * 3 * 2 # See Appendix
-    short_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=ig_d_code_dim, length=3)
+    short_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code, length=2)
     short_discriminator.to(device)
-    long_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=ig_d_code_dim, length=10)
+    long_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code, length=5)
     long_discriminator.to(device)
 
-    infogan_disc_loss = nn.NLLLoss()
+    infogan_disc_loss = nn.CrossEntropyLoss()
 
-    pe = PositionalEncoding(dimension=256, max_len=50, device=device)
+    pe = PositionalEncoding(dimension=256, max_len=lafan_dataset.max_transition_length, device=device)
 
     generator_optimizer = Adam(params=list(state_encoder.parameters()) + 
                                       list(offset_encoder.parameters()) + 
@@ -97,12 +97,25 @@ def train():
                                     betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
                                     amsgrad=True)
 
+
+    # EXP
+
+    euc_loss_weight = 1.0
+
     for epoch in tqdm(range(config['model']['epochs']), position=0, desc="Epoch"):
+
+        # Control transition length
+        if lafan_dataset.cur_seq_length < lafan_dataset.max_transition_length:
+            lafan_dataset.cur_seq_length =  np.int32(1/lafan_dataset.increase_rate * epoch + lafan_dataset.start_seq_length)
+
         state_encoder.train()
         offset_encoder.train()
         target_encoder.train()
         lstm.train()
         decoder.train()
+
+        if epoch >= 75:
+            euc_loss_weight = np.maximum(-0.9/75 * (epoch-75) + 1, 0.1)
 
         batch_pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
         for sampled_batch in batch_pbar:
@@ -133,29 +146,42 @@ def train():
             pred_list = []
             pred_list.append(global_pos[:,0])
 
-            # 3.4: target noise is sampled once per sequence
-            target_noise = torch.normal(mean=0, std=config['model']['target_noise'], size=(current_batch_size, 256 * 2), device=device)
+            # 3.4: target noise is sampled once per sequence TODO: NOISE를 root v에 줘보자
+            target_noise = torch.normal(mean=0, std=config['model']['target_noise'], size=root_v.shape, device=device)
 
             # InfoGAN code (per motion)
             infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=ig_d_code_dim, device=device)
+            
+            # Generating Frames
+            training_frames = torch.randint(low=lafan_dataset.start_seq_length, high=lafan_dataset.cur_seq_length + 1, size=(1,))[0]
 
             # Generating Frames. It uses fixed 50 frames of generation for now.
             for t in range(lafan_dataset.cur_seq_length - 1):
                 if t  == 0: # if initial frame
                     root_p_t = root_p[:,t]
-                    root_v_t = root_v[:,t]
+                    root_v_t_clean = root_v[:,t]
+
+                    # EXP
+                    root_v_t_noise = target_noise[:, t]
+
                     local_q_t = local_q[:,t]
                     local_q_t = local_q_t.view(local_q_t.size(0), -1)
                     contact_t = contact[:,t]
                 else:
                     root_p_t = root_pred  # Be careful about dimension
-                    root_v_t = root_v_pred[0]
+                    root_v_t_clean = root_v_pred[0]
+
+                    # EXP
+                    root_v_t_noise = target_noise[:,t,:]
+
                     local_q_t = local_q_pred[0]
                     contact_t = contact_pred[0]
 
                 assert root_p_offset.shape == root_p_t.shape
 
                 # state input
+                noise_multiplier = noise_injector(t, length=lafan_dataset.cur_seq_length)  # Noise injection
+                root_v_t = root_v_t_clean + root_v_t_noise * noise_multiplier
                 vanilla_state_input = torch.cat([local_q_t, root_v_t, contact_t], -1)
                 state_input = torch.cat([vanilla_state_input, infogan_code_gen], dim=1)
                 # offset input
@@ -175,9 +201,11 @@ def train():
                 h_target = pe(h_target, t)  # (batch size, 256)
 
                 offset_target = torch.cat([h_offset, h_target], dim=1)
+                
                 # Inject noise by scheduling
-                noise_multiplier = noise_injector(t, length=lafan_dataset.cur_seq_length)  # Noise injection
-                prtbd_offset_target = offset_target + noise_multiplier * target_noise
+                # noise_multiplier = noise_injector(t, length=lafan_dataset.cur_seq_length)  # Noise injection
+                # prtbd_offset_target = offset_target + noise_multiplier * target_noise
+                prtbd_offset_target = offset_target
 
                 # lstm
                 h_in = torch.cat([h_state, prtbd_offset_target], dim=1).unsqueeze(0)
@@ -192,7 +220,7 @@ def train():
                 local_q_pred_ = local_q_pred_ / torch.norm(local_q_pred_, dim = -1, keepdim = True)
 
                 root_v_pred = h_pred[:,:,target_in:]
-                root_pred = root_v_pred + root_p_t
+                root_pred = root_v_pred + root_p_t - root_v_t_noise * noise_multiplier  # EXP: #L176
 
                 # FK
                 root_pred = root_pred.squeeze()
@@ -210,10 +238,10 @@ def train():
                 # Calculate L1 Norm
                 # 3.7.3: We scale all of our losses to be approximately equal on the LaFAN1 dataset 
                 # for an untrained network before tuning them with custom weights.
-                loss_pos += torch.mean(torch.abs(pos_pred - pos_next) / lafan_dataset.global_pos_std) / lafan_dataset.cur_seq_length
-                loss_root += torch.mean(torch.abs(root_pred - root_p_next) / lafan_dataset.global_pos_std[0]) / lafan_dataset.cur_seq_length
-                loss_quat += torch.mean(torch.abs(local_q_pred[0] - local_q_next)) / lafan_dataset.cur_seq_length
-                loss_contact += torch.mean(torch.abs(contact_pred[0] - contact_next)) / lafan_dataset.cur_seq_length
+                loss_pos += torch.mean(torch.abs(pos_pred - pos_next)) / training_frames
+                loss_root += torch.mean(torch.abs(root_pred - root_p_next)) / training_frames
+                loss_quat += torch.mean(torch.abs(local_q_pred[0] - local_q_next)) / training_frames
+                loss_contact += torch.mean(torch.abs(contact_pred[0] - contact_next)) / training_frames
 
             # Adversarial
             fake_pos_input = torch.cat([x.reshape(current_batch_size, -1).unsqueeze(-1) for x in pred_list], -1)
@@ -257,7 +285,7 @@ def train():
 
             generator_optimizer.zero_grad()
 
-            loss_total = config['model']['loss_pos_weight'] * loss_pos + \
+            euc_loss = config['model']['loss_pos_weight'] * loss_pos + \
                          config['model']['loss_quat_weight'] * loss_quat + \
                          config['model']['loss_root_weight'] * loss_root + \
                          config['model']['loss_contact_weight'] * loss_contact
@@ -274,7 +302,7 @@ def train():
             long_disc_code_loss = infogan_disc_loss(long_fake_q_discrete, fake_indices)
 
             total_g_loss = config['model']['loss_generator_weight'] * (long_g_loss + long_disc_code_loss + short_g_loss + short_disc_code_loss)
-            loss_total += total_g_loss
+            loss_total = euc_loss * euc_loss_weight + total_g_loss
 
             # TOTAL LOSS
             loss_total.backward()

@@ -16,12 +16,12 @@ model:
     loss_discriminator_weight: 0.1
     loss_generator_weight: 0.1
     target_noise: 0.5
-    saved_weight_path: 'model_weights/2021-05-12_16-21-22/trained_weight_20'
+    saved_weight_path: 'model_weights/2021-05-12_16-21-22/trained_weight_180'
     save_optimizer: False
     learning_rate: 0.001
     optim_beta1: 0.5
     optim_beta2: 0.9
-    infogan_code: 4
+    infogan_code: 3
     
 log:
     weight_save_interval: 5
@@ -29,5 +29,5 @@ log:
 test:
     num_gifs: 30
     plot: true
-    inference_batch_index: 5
-    conditioning_code: 3
+    inference_batch_index: 20
+    conditioning_code: 0

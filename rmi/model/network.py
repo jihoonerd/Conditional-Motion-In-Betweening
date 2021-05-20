@@ -123,16 +123,9 @@ class InfoGANDiscriminator(nn.Module):
         )
 
         self.sigmoid = nn.Sigmoid()
-        self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x):
         regular_gan_out = self.sigmoid(self.regular_gan(x))
-        q_out = self.infogan_q(x) # TODO: Discriminator 설계 윈도우로 한번에 처리하는게 맞을까.
-        # appendix보면 위치정보 기반으로 윈도우 한번에 평균내버림 코드에 의해 만들어진 모션의 집합이니깐 그냥 써도 괜찮지 않을까?
-        # 그러면 discriminator loss BCE는 어떻게 처리하지. LSGAN은 평균내서 square해버린다.
-        # 모션 전체에 대해서 평균 후 판단. 각각의 윈도우에서 gan out이 있는데 전체 평균
-        # 대응해보면 각각의 infogan out에 대ㅐ서 전체 평균, 여기서는 BCE의 평균을 해야하지 않을까
-        # [IMPORTANT] 야 discriminator 건드릴 필요가 있나? 그냥 gan loss쓰면되고 generator loss만 반영하면 될 것 같은데? 확인해보자.
-        q_out_mean = torch.mean(q_out, dim=2)
-        q_discrete = self.softmax(q_out_mean)
+        q_out = self.infogan_q(x)
+        q_discrete = torch.mean(q_out, dim=2)  # TODO: validate this. Is it okay to take mean for in-window data?
         return regular_gan_out, q_discrete
