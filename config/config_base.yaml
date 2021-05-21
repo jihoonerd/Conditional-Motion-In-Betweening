@@ -1,5 +1,5 @@
 data:
-    data_dir: 'ubisoft-laforge-animation-dataset/output/BVH'
+    data_dir: 'ubisoft-laforge-animation-dataset/output/BVH_test'
     data_loader_workers: 4
     skeleton_path: 'ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh'
 
@@ -7,8 +7,8 @@ device:
     gpu_id: 0
 
 model:
-    batch_size: 128
-    epochs: 400
+    batch_size: 32
+    epochs: 500
     loss_quat_weight: 1.0
     loss_root_weight: 1.0
     loss_pos_weight: 0.5

@@ -11,7 +11,7 @@ def generate_infogan_code(batch_size, discrete_code_dim, device):
 
     if discrete_code_dim != 0:
         label_idx = torch.randint(low=0, high=discrete_code_dim, size=(batch_size,), device=device)
-        discrete_code = torch.nn.functional.one_hot(label_idx)
+        discrete_code = torch.nn.functional.one_hot(label_idx, num_classes=discrete_code_dim)
     return discrete_code, label_idx
 
 
