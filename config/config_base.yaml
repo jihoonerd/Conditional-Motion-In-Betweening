@@ -8,7 +8,7 @@ device:
 
 model:
     batch_size: 32
-    epochs: 500
+    epochs: 1000
     loss_quat_weight: 1.0
     loss_root_weight: 1.0
     loss_pos_weight: 0.5

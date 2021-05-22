@@ -26,7 +26,7 @@ def train():
 
     # Set device to use
     gpu_id = config['device']['gpu_id']
-    device = torch.device(f"cpu")
+    device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
     infogan_code = config['model']['infogan_code']
 
     # Prepare Directory
