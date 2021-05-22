@@ -40,7 +40,7 @@ def train():
 
     # Flip, Load and preprocess data. It utilizes LAFAN1 utilities
     flip_bvh(config['data']['data_dir'])
-    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=False, device=device, cur_seq_length=5, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, cur_seq_length=5, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=config['model']['batch_size'], shuffle=True, num_workers=config['data']['data_loader_workers'])
 
     # Extract dimension from processed data
@@ -220,7 +220,7 @@ def train():
                 local_q_pred_ = local_q_pred_ / torch.norm(local_q_pred_, dim = -1, keepdim = True)
 
                 root_v_pred = h_pred[:,:,target_in:]
-                root_pred = root_v_pred + root_p_t - root_v_t_noise * noise_multiplier  # EXP: #L176
+                root_pred = root_v_pred + root_p_t
 
                 # FK
                 root_pred = root_pred.squeeze()

@@ -1,5 +1,5 @@
 data:
-    data_dir: 'ubisoft-laforge-animation-dataset/output/BVH_test'
+    data_dir: 'ubisoft-laforge-animation-dataset/output/BVH'
     data_loader_workers: 4
     skeleton_path: 'ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh'
 
