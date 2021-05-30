@@ -7,8 +7,8 @@ device:
     gpu_id: 0
 
 model:
-    batch_size: 32
-    epochs: 1000
+    batch_size: 128
+    epochs: 2000
     loss_quat_weight: 1.0
     loss_root_weight: 1.0
     loss_pos_weight: 0.5
@@ -16,7 +16,7 @@ model:
     loss_discriminator_weight: 0.1
     loss_generator_weight: 0.1
     target_noise: 0.5
-    saved_weight_path: 'model_weights/2021-05-12_16-21-22/trained_weight_180'
+    saved_weight_path: 'model_weights/2021-05-25_12-56-49/trained_weight_45'
     save_optimizer: False
     learning_rate: 0.001
     optim_beta1: 0.5
@@ -29,5 +29,6 @@ log:
 test:
     num_gifs: 30
     plot: true
+    training_frames: 20
     inference_batch_index: 20
     conditioning_code: 0

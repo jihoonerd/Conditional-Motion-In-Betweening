@@ -146,7 +146,7 @@ def train():
             pred_list = []
             pred_list.append(global_pos[:,0])
 
-            # 3.4: target noise is sampled once per sequence TODO: NOISE를 root v에 줘보자
+            # 3.4: target noise is sampled once per sequence
             target_noise = torch.normal(mean=0, std=config['model']['target_noise'], size=root_v.shape, device=device)
 
             # InfoGAN code (per motion)
@@ -155,8 +155,7 @@ def train():
             # Generating Frames
             training_frames = torch.randint(low=lafan_dataset.start_seq_length, high=lafan_dataset.cur_seq_length + 1, size=(1,))[0]
 
-            # Generating Frames. It uses fixed 50 frames of generation for now.
-            for t in range(lafan_dataset.cur_seq_length - 1):
+            for t in range(training_frames):
                 if t  == 0: # if initial frame
                     root_p_t = root_p[:,t]
                     root_v_t_clean = root_v[:,t]
@@ -196,9 +195,10 @@ def train():
                 h_target = target_encoder(target_input)
                 
                 # Use positional encoding
-                h_state = pe(h_state, t)
-                h_offset = pe(h_offset, t)  # (batch size, 256)
-                h_target = pe(h_target, t)  # (batch size, 256)
+                tta = training_frames - t
+                h_state = pe(h_state, tta)
+                h_offset = pe(h_offset, tta)  # (batch size, 256)
+                h_target = pe(h_target, tta)  # (batch size, 256)
 
                 offset_target = torch.cat([h_offset, h_target], dim=1)
                 
