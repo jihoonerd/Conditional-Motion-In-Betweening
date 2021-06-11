@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.nn.modules.activation import ReLU
 from rmi.model.plu import PLU
 
 
@@ -94,6 +95,25 @@ class Discriminator(nn.Module):
         x = self.relu(x)
         x = self.fc3(x)
         return x
+
+class SinglePoseDiscriminator(nn.Module):
+    def __init__(self, input_dim = 128):
+        self.input_dim = input_dim
+
+        self.single_pose_disc = nn.Sequential(
+            nn.Linear(self.input_dim, self.input_dim),
+            nn.ReLU(),
+            nn.Linear(self.input_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)
+        )
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        gan_out = self.sigmoid(self.single_pose_disc(x))
+        return gan_out
 
 
 class InfoGANDiscriminator(nn.Module):

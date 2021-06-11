@@ -24,6 +24,7 @@ model:
     infogan_code: 3
     
 log:
+    name: 'infogan'
     weight_save_interval: 5
 
 test:

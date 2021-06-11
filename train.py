@@ -18,13 +18,16 @@ from rmi.model.network import (Decoder, InfoGANDiscriminator, InputEncoder,
                                LSTMNetwork)
 from rmi.model.noise_injector import noise_injector
 from rmi.model.positional_encoding import PositionalEncoding
+from torch.utils.tensorboard.writer import SummaryWriter
 
 
 def train():
     # Load configuration from yaml
     config = yaml.safe_load(open('./config/config_base.yaml', 'r').read())
+    writer = SummaryWriter(config['log']['name'])
 
     # Set device to use
+    # TODO: Support Multi GPU
     gpu_id = config['device']['gpu_id']
     device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
     infogan_code = config['model']['infogan_code']
@@ -40,6 +43,8 @@ def train():
 
     # Flip, Load and preprocess data. It utilizes LAFAN1 utilities
     flip_bvh(config['data']['data_dir'])
+
+    # Load LAFAN Dataset
     lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, cur_seq_length=5, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=config['model']['batch_size'], shuffle=True, num_workers=config['data']['data_loader_workers'])
 
