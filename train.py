@@ -15,7 +15,7 @@ from tqdm import tqdm
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh, generate_infogan_code
 from rmi.model.network import (Decoder, InfoGANDiscriminator, InputEncoder,
-                               LSTMNetwork)
+                               LSTMNetwork, SinglePoseDiscriminator)
 from rmi.model.noise_injector import noise_injector
 from rmi.model.positional_encoding import PositionalEncoding
 from torch.utils.tensorboard.writer import SummaryWriter
@@ -24,18 +24,24 @@ from torch.utils.tensorboard.writer import SummaryWriter
 def train():
     # Load configuration from yaml
     config = yaml.safe_load(open('./config/config_base.yaml', 'r').read())
-    writer = SummaryWriter(config['log']['name'])
 
     # Set device to use
     # TODO: Support Multi GPU
     gpu_id = config['device']['gpu_id']
     device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
+
+    # Set number of InfoGAN Code
     infogan_code = config['model']['infogan_code']
 
     # Prepare Directory
     time_stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     model_path = os.path.join('model_weights', time_stamp)
     pathlib.Path(model_path).mkdir(parents=True, exist_ok=True)
+
+    # Prepare Tensorboard
+    writer = SummaryWriter(config['log']['name'])
+    tb_path = os.path.join('tensorboard', time_stamp)
+    pathlib.Path(tb_path).mkdir(parents=True, exist_ok=True)
     
     # Load Skeleton
     parsed = BVHParser().parse(config['data']['skeleton_path']) # Use first bvh info as a reference skeleton.
@@ -45,7 +51,7 @@ def train():
     flip_bvh(config['data']['data_dir'])
 
     # Load LAFAN Dataset
-    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, cur_seq_length=5, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=False, device=device, cur_seq_length=5, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=config['model']['batch_size'], shuffle=True, num_workers=config['data']['data_loader_workers'])
 
     # Extract dimension from processed data
@@ -70,14 +76,17 @@ def train():
 
     # LSTM
     lstm_in = state_encoder.out_dim * 3
-    lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_in, device=device)
+    lstm_hidden = config['model']['lstm_hidden']
+    lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
     lstm.to(device)
 
     # Decoder
-    decoder = Decoder(input_dim=lstm_in, out_dim=state_in)
+    decoder = Decoder(input_dim=lstm_hidden, out_dim=state_in)
     decoder.to(device)
 
     discriminator_in = lafan_dataset.num_joints * 3 * 2 # See Appendix
+    single_pose_discriminator = SinglePoseDiscriminator(input_dim=discriminator_in)
+    single_pose_discriminator.to(device)
     short_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code, length=2)
     short_discriminator.to(device)
     long_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code, length=5)
@@ -102,11 +111,9 @@ def train():
                                     betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
                                     amsgrad=True)
 
-
-    # EXP
-
     euc_loss_weight = 1.0
 
+    ## TODO: From Here
     for epoch in tqdm(range(config['model']['epochs']), position=0, desc="Epoch"):
 
         # Control transition length

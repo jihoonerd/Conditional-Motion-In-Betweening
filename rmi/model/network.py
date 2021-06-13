@@ -97,7 +97,8 @@ class Discriminator(nn.Module):
         return x
 
 class SinglePoseDiscriminator(nn.Module):
-    def __init__(self, input_dim = 128):
+    def __init__(self, input_dim):
+        super().__init__()
         self.input_dim = input_dim
 
         self.single_pose_disc = nn.Sequential(
