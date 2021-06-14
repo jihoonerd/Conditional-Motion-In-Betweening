@@ -97,24 +97,39 @@ class Discriminator(nn.Module):
         return x
 
 class SinglePoseDiscriminator(nn.Module):
-    def __init__(self, input_dim):
+    def __init__(self, input_dim, discrete_code_dim):
         super().__init__()
         self.input_dim = input_dim
+        self.discrete_code_dim =  discrete_code_dim
 
         self.single_pose_disc = nn.Sequential(
             nn.Linear(self.input_dim, self.input_dim),
             nn.ReLU(),
-            nn.Linear(self.input_dim, 64),
+            nn.Linear(self.input_dim, 128),
             nn.ReLU(),
+            nn.Linear(128, 64),
+        )
+
+        self.regular_gan = nn.Sequential(
             nn.Linear(64, 32),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Linear(32, 1)
         )
+
+        self.infogan_q = nn.Sequential(
+            nn.Linear(64, 64),
+            nn.LeakyReLU(0.1),
+            nn.Linear(64, self.discrete_code_dim)
+        )
+
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        gan_out = self.sigmoid(self.single_pose_disc(x))
-        return gan_out
+        discriminator_out = self.single_pose_disc(x)
+        regular_gan_out = self.sigmoid(self.regular_gan(discriminator_out))
+
+        q_out = self.infogan_q(discriminator_out)
+        return regular_gan_out, q_out
 
 
 class InfoGANDiscriminator(nn.Module):

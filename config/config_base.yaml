@@ -9,24 +9,23 @@ device:
 model:
     lstm_hidden: 1024
     batch_size: 128
-    epochs: 2000
+    epochs: 3000
     loss_quat_weight: 1.0
     loss_root_weight: 1.0
     loss_pos_weight: 0.5
     loss_contact_weight: 0.1
-    loss_discriminator_weight: 0.1
-    loss_generator_weight: 0.1
+    loss_discriminator_weight: 1.0
+    loss_generator_weight: 1.0
     target_noise: 0.5
-    saved_weight_path: 'model_weights/2021-05-25_12-56-49/trained_weight_45'
+    saved_weight_path: 'model_weights/tests'
     save_optimizer: False
     learning_rate: 0.001
     optim_beta1: 0.5
     optim_beta2: 0.9
-    infogan_code: 3
+    infogan_code: 4
     
 log:
-    name: 'infogan'
-    weight_save_interval: 5
+    weight_save_interval: 10
 
 test:
     num_gifs: 30
