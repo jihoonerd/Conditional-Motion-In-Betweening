@@ -119,7 +119,7 @@ def test():
 
             # InfoGAN code
             infogan_code_gen = torch.zeros(current_batch_size, infogan_code)
-            infogan_code_gen[:,conditioning_code] = -3
+            infogan_code_gen[:,conditioning_code] = 1
 
             training_frames = config['test']['training_frames']
             for t in range(training_frames):

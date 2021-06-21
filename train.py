@@ -360,7 +360,7 @@ def train():
 
         summarywriter.add_scalar("LOSS/Generator", total_g_loss, epoch + 1)
         summarywriter.add_scalar("LOSS/Discriminator", total_d_loss, epoch + 1)
-        summarywriter.add_scalar(f"LOSS/L1 Loss * {euc_loss_weight}", l1_loss * euc_loss_weight, epoch + 1)
+        summarywriter.add_scalar("LOSS/L1 Loss", l1_loss * euc_loss_weight, epoch + 1)
         summarywriter.add_scalar("LOSS/Total Loss (L1 + Generator)", loss_total, epoch + 1)
         summarywriter.add_scalar("L1 Weight Scheduling", euc_loss_weight, epoch + 1)
 
