@@ -41,7 +41,7 @@ def test():
     skeleton = TorchSkeleton(skeleton=parsed.skeleton, root_name='Hips', device=device)
 
      # Load and preprocess data. It utilizes LAFAN1 utilities
-    lafan_dataset_test = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=False, cur_seq_length=10, max_transition_length=30, device=device)
+    lafan_dataset_test = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=False, start_seq_length=30, cur_seq_length=30, max_transition_length=30, device=device)
     lafan_data_loader_test = DataLoader(lafan_dataset_test, batch_size=config['model']['batch_size'], shuffle=False, num_workers=config['data']['data_loader_workers'])
 
     inference_batch_index = config['test']['inference_batch_index']
@@ -71,12 +71,13 @@ def test():
 
     # LSTM
     lstm_in = state_encoder.out_dim * 3
-    lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_in, device=device)
+    lstm_hidden = config['model']['lstm_hidden']
+    lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
     lstm.to(device)
     lstm.load_state_dict(torch.load(os.path.join(saved_weight_path, 'lstm.pkl'), map_location=device))
 
     # Decoder
-    decoder = Decoder(input_dim=lstm_in, out_dim=state_in)
+    decoder = Decoder(input_dim=lstm_hidden, out_dim=state_in)
     decoder.to(device)
     decoder.load_state_dict(torch.load(os.path.join(saved_weight_path, 'decoder.pkl'), map_location=device))
 
@@ -118,7 +119,7 @@ def test():
 
             # InfoGAN code
             infogan_code_gen = torch.zeros(current_batch_size, infogan_code)
-            infogan_code_gen[:,conditioning_code] = 1
+            infogan_code_gen[:,conditioning_code] = -3
 
             training_frames = config['test']['training_frames']
             for t in range(training_frames):

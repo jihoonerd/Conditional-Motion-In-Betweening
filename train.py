@@ -120,6 +120,9 @@ def train():
         if lafan_dataset.cur_seq_length < lafan_dataset.max_transition_length:
             lafan_dataset.cur_seq_length =  np.int32(1/lafan_dataset.increase_rate * epoch + lafan_dataset.start_seq_length)
 
+        if 200 <= epoch:
+            euc_loss_weight = min(0.15, -0.5/400 * (epoch - 400) + 0.15)
+
         state_encoder.train()
         offset_encoder.train()
         target_encoder.train()
@@ -286,31 +289,32 @@ def train():
             sp_d_real_loss = torch.mean((sp_d_real_gan_score - 1) ** 2)
             sp_d_loss = (sp_d_fake_loss + sp_d_real_loss) / 2.0
 
-            # ## Short discriminator
-            # short_d_fake_gan_out, _ = short_discriminator(fake_input.detach())
-            # short_d_fake_gan_score = torch.mean(short_d_fake_gan_out[:,0], dim=1)
+            ## Short discriminator
+            short_d_fake_gan_out, _ = short_discriminator(fake_input.detach())
+            short_d_fake_gan_score = torch.mean(short_d_fake_gan_out[:,0], dim=1)
 
-            # short_d_real_gan_out, _ = short_discriminator(real_input)
-            # short_d_real_gan_score = torch.mean(short_d_real_gan_out[:,0], dim=1)
+            short_d_real_gan_out, _ = short_discriminator(real_input)
+            short_d_real_gan_score = torch.mean(short_d_real_gan_out[:,0], dim=1)
 
-            # short_d_fake_loss = torch.mean((short_d_fake_gan_score) ** 2)  
-            # short_d_real_loss = torch.mean((short_d_real_gan_score -  1) ** 2)
+            short_d_fake_loss = torch.mean((short_d_fake_gan_score) ** 2)  
+            short_d_real_loss = torch.mean((short_d_real_gan_score -  1) ** 2)
 
-            # short_d_loss = (short_d_fake_loss + short_d_real_loss) / 2.0
+            short_d_loss = (short_d_fake_loss + short_d_real_loss) / 2.0
 
-            # ## Long  discriminator
-            # long_d_fake_gan_out, _ = long_discriminator(fake_input.detach())
-            # long_d_fake_gan_score = torch.mean(long_d_fake_gan_out[:,0], dim=1)
+            ## Long  discriminator
+            long_d_fake_gan_out, _ = long_discriminator(fake_input.detach())
+            long_d_fake_gan_score = torch.mean(long_d_fake_gan_out[:,0], dim=1)
 
-            # long_d_real_gan_out, _ = long_discriminator(real_input)
-            # long_d_real_gan_score = torch.mean(long_d_real_gan_out[:,0], dim=1)
+            long_d_real_gan_out, _ = long_discriminator(real_input)
+            long_d_real_gan_score = torch.mean(long_d_real_gan_out[:,0], dim=1)
 
-            # long_d_fake_loss = torch.mean((long_d_fake_gan_score) ** 2)
-            # long_d_real_loss = torch.mean((long_d_real_gan_score -  1) ** 2)
+            long_d_fake_loss = torch.mean((long_d_fake_gan_score) ** 2)
+            long_d_real_loss = torch.mean((long_d_real_gan_score -  1) ** 2)
 
-            # long_d_loss = (long_d_fake_loss + long_d_real_loss) / 2.0
+            long_d_loss = (long_d_fake_loss + long_d_real_loss) / 2.0
 
-            total_d_loss = config['model']['loss_discriminator_weight'] * (sp_d_loss)
+            total_d_loss = config['model']['loss_sp_discriminator_weight'] * (sp_d_loss) + \
+                            config['model']['loss_discriminator_weight'] * (short_d_loss + long_d_loss)
             total_d_loss.backward()
             discriminator_optimizer.step()
 
@@ -322,24 +326,23 @@ def train():
                       config['model']['loss_contact_weight'] * loss_contact
             
             # Adversarial
-            # {OVERHAUL NEEDED EVERY MOTION }
             ## Single pose generator
             sp_g_fake_gan_out, sp_g_fake_q_discrete = single_pose_discriminator(sp_fake_input)
             sp_g_fake_gan_score = sp_g_fake_gan_out[:, 0]
             sp_g_fake_loss = torch.mean((sp_g_fake_gan_score - 1) ** 2)
             sp_disc_code_loss = infogan_disc_loss(sp_g_fake_q_discrete, fake_indices.reshape(sp_g_fake_q_discrete.shape[0]))
 
-            # short_g_fake_gan_out, short_g_fake_q_discrete = short_discriminator(fake_input)
-            # short_g_score = torch.mean(short_g_fake_gan_out[:,0], dim=1)
-            # short_g_loss = torch.mean((short_g_score -  1) ** 2)
-            # short_disc_code_loss = infogan_disc_loss(short_g_fake_q_discrete, fake_indices)
+            short_g_fake_gan_out, _ = short_discriminator(fake_input)
+            short_g_score = torch.mean(short_g_fake_gan_out[:,0], dim=1)
+            short_g_loss = torch.mean((short_g_score -  1) ** 2)
 
-            # long_g_fake_gan_out, long_g_fake_q_discrete = long_discriminator(fake_input)
-            # long_g_score = torch.mean(long_g_fake_gan_out[:,0], dim=1)
-            # long_g_loss = torch.mean((long_g_score -  1) ** 2)
-            # long_disc_code_loss = infogan_disc_loss(long_g_fake_q_discrete, fake_indices)
+            long_g_fake_gan_out, _ = long_discriminator(fake_input)
+            long_g_score = torch.mean(long_g_fake_gan_out[:,0], dim=1)
+            long_g_loss = torch.mean((long_g_score -  1) ** 2)
 
-            total_g_loss = config['model']['loss_generator_weight'] * (sp_disc_code_loss + sp_g_fake_loss)
+            total_g_loss = config['model']['loss_sp_generator_weight'] * (sp_disc_code_loss + sp_g_fake_loss) + \
+                           config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
+        
             loss_total = l1_loss * euc_loss_weight + total_g_loss
 
             # TOTAL LOSS
@@ -355,10 +358,11 @@ def train():
             batch_pbar.set_postfix({'LOSS': np.round(loss_total.item(), decimals=3)})
 
 
-        summarywriter.add_scalar("LOSS/Generator", total_g_loss, epoch+1)
-        summarywriter.add_scalar("LOSS/Discriminator", total_d_loss, epoch+1)
-        summarywriter.add_scalar(f"LOSS/L1 Loss * {euc_loss_weight}", l1_loss * euc_loss_weight, epoch+1)
-        summarywriter.add_scalar("LOSS/Total Loss (L1 + Generator)", loss_total, epoch+1)
+        summarywriter.add_scalar("LOSS/Generator", total_g_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/Discriminator", total_d_loss, epoch + 1)
+        summarywriter.add_scalar(f"LOSS/L1 Loss * {euc_loss_weight}", l1_loss * euc_loss_weight, epoch + 1)
+        summarywriter.add_scalar("LOSS/Total Loss (L1 + Generator)", loss_total, epoch + 1)
+        summarywriter.add_scalar("L1 Weight Scheduling", euc_loss_weight, epoch + 1)
 
         if (epoch + 1) % config['log']['weight_save_interval'] == 0:
             weight_epoch = 'trained_weight_' + str(epoch + 1)

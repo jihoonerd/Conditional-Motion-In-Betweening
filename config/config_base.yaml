@@ -14,10 +14,12 @@ model:
     loss_root_weight: 1.0
     loss_pos_weight: 0.5
     loss_contact_weight: 0.1
-    loss_discriminator_weight: 1.0
-    loss_generator_weight: 1.0
+    loss_sp_discriminator_weight: 1.0
+    loss_discriminator_weight: 0.5
+    loss_sp_generator_weight: 1.0
+    loss_generator_weight: 0.5
     target_noise: 0.5
-    saved_weight_path: 'model_weights/tests'
+    saved_weight_path: 'model_weights/2021-06-14_14-54-17/trained_weight_310'
     save_optimizer: False
     learning_rate: 0.001
     optim_beta1: 0.5
@@ -30,6 +32,6 @@ log:
 test:
     num_gifs: 30
     plot: true
-    training_frames: 20
+    training_frames: 30
     inference_batch_index: 20
-    conditioning_code: 0
+    conditioning_code: 3
