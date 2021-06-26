@@ -114,6 +114,7 @@ def train():
                                     betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
                                     amsgrad=True)
 
+    pdist = nn.PairwiseDistance(p=2)
 
     for epoch in tqdm(range(config['model']['epochs']), position=0, desc="Epoch"):
 
@@ -133,6 +134,7 @@ def train():
             loss_quat = 0
             loss_contact = 0
             loss_root = 0
+            div_adv = 0
 
             current_batch_size = len(sampled_batch['global_pos'])
 
@@ -164,6 +166,12 @@ def train():
 
             # Generate Infogan Code (batch, length, disc_code)
             infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, sequence_length=training_frames, discrete_code_dim=ig_d_code_dim, device=device)
+            
+            ## EXP
+            diverging_code_0 = torch.zeros_like(infogan_code_gen, device=device)
+            diverging_code_0[:, :, 0] = 1
+            diverging_code_1 = torch.zeros_like(infogan_code_gen, device=device)
+            diverging_code_1[:, :, 1] = 1
 
             local_q_pred_list = []
             for t in range(training_frames):
@@ -189,6 +197,10 @@ def train():
                 # concatenate InfoGAN code
                 state_input = torch.cat([vanilla_state_input, infogan_code_gen[:, t]], dim=1)
 
+                ## EXP
+                diverging_state_0 = torch.cat([vanilla_state_input, diverging_code_0[:, t]], dim=1)
+                diverging_state_1 = torch.cat([vanilla_state_input, diverging_code_1[:, t]], dim=1)
+
                 # offset input
                 root_p_offset_t = root_p_offset - root_p_t
                 local_q_offset_t = local_q_offset - local_q_t
@@ -197,25 +209,39 @@ def train():
                 target_input = target
 
                 h_state = state_encoder(state_input)
+
+                # EXP
+                h_state_diverging_0 = state_encoder(diverging_state_0)
+                h_state_diverging_1 = state_encoder(diverging_state_1)
+
                 h_offset = offset_encoder(offset_input)
                 h_target = target_encoder(target_input)
                 
                 # Use positional encoding
                 tta = training_frames - t
                 h_state = pe(h_state, tta)
+
+                # EXP
+                h_state_diverging_0 = pe(h_state_diverging_0, tta)
+                h_state_diverging_1 = pe(h_state_diverging_1, tta)
+
                 h_offset = pe(h_offset, tta)  # (batch size, 256)
                 h_target = pe(h_target, tta)  # (batch size, 256)
 
                 offset_target = torch.cat([h_offset, h_target], dim=1)
-                
-                # Inject noise by scheduling
-                # noise_multiplier = noise_injector(t, length=lafan_dataset.cur_seq_length)  # Noise injection
-                # prtbd_offset_target = offset_target + noise_multiplier * target_noise
-                prtbd_offset_target = offset_target
 
                 # lstm
-                h_in = torch.cat([h_state, prtbd_offset_target], dim=1).unsqueeze(0)
+                h_in = torch.cat([h_state, offset_target], dim=1).unsqueeze(0)
+
+                # EXP
+                h_div_0_in = torch.cat([h_state_diverging_0, offset_target], dim=1).unsqueeze(0)
+                h_div_1_in = torch.cat([h_state_diverging_1, offset_target], dim=1).unsqueeze(0)
+
                 h_out = lstm(h_in)
+                
+                # EXP
+                h_div_0_out = lstm(h_div_0_in)
+                h_div_1_out = lstm(h_div_1_in)
 
                 # decoder
                 h_pred, contact_pred = decoder(h_out)
@@ -229,11 +255,35 @@ def train():
                 root_v_pred = h_pred[:,:,target_in:]
                 root_pred = root_v_pred + root_p_t
 
+                # EXP
+                div_0_h_pred, div_0_contact_pred = decoder(h_div_0_out)
+                div_0_local_q_v_pred = div_0_h_pred[:,:,:target_in]
+                div_0_local_q_pred = div_0_local_q_v_pred + local_q_t
+                div_0_local_q_pred_ = div_0_local_q_pred.view(div_0_local_q_pred.size(0), div_0_local_q_pred.size(1), -1, 4)
+                div_0_local_q_pred_ = div_0_local_q_pred_ / torch.norm(div_0_local_q_pred_, dim = -1, keepdim = True)
+                div_0_root_v_pred = div_0_h_pred[:,:,target_in:]
+                div_0_root_pred = div_0_root_v_pred + root_p_t
+                
+                div_1_h_pred, div_1_contact_pred = decoder(h_div_1_out)
+                div_1_local_q_v_pred = div_1_h_pred[:,:,:target_in]
+                div_1_local_q_pred = div_1_local_q_v_pred + local_q_t
+                div_1_local_q_pred_ = div_1_local_q_pred.view(div_1_local_q_pred.size(0), div_1_local_q_pred.size(1), -1, 4)
+                div_1_local_q_pred_ = div_1_local_q_pred_ / torch.norm(div_1_local_q_pred_, dim = -1, keepdim = True)
+                div_1_root_v_pred = div_1_h_pred[:,:,target_in:]
+                div_1_root_pred = div_1_root_v_pred + root_p_t
+
                 # FK
                 root_pred = root_pred.squeeze()
                 local_q_pred_ = local_q_pred_.squeeze()
                 pos_pred, _ = skeleton.forward_kinematics(root_pred, local_q_pred_, rot_repr='quaternion')
                 pred_list.append(pos_pred)
+
+                # EXP
+                div_0_root_pred = div_0_root_pred.squeeze()
+                div_0_local_q_pred_ = div_0_local_q_pred_.squeeze()
+
+                div_1_root_pred = div_1_root_pred.squeeze()
+                div_1_local_q_pred_ = div_1_local_q_pred_.squeeze()
 
                 # Loss
                 pos_next = global_pos[:,t+1]
@@ -241,14 +291,17 @@ def train():
                 local_q_next = local_q_next.view(local_q_next.size(0), -1)
                 root_p_next = root_p[:,t+1]
                 contact_next = contact[:,t+1]
+                # EXP
+                noise_multiplier = noise_injector(t, length=training_frames)  # Noise injection
+                div_adv += torch.sum(pdist(div_0_root_pred, div_1_root_pred) * noise_multiplier)
 
                 # Calculate L1 Norm
                 # 3.7.3: We scale all of our losses to be approximately equal on the LaFAN1 dataset 
                 # for an untrained network before tuning them with custom weights.
-                loss_pos += torch.mean(torch.abs(pos_pred - pos_next)) / training_frames
-                loss_root += torch.mean(torch.abs(root_pred - root_p_next)) / training_frames
-                loss_quat += torch.mean(torch.abs(local_q_pred[0] - local_q_next)) / training_frames
-                loss_contact += torch.mean(torch.abs(contact_pred[0] - contact_next)) / training_frames
+                # loss_pos += torch.mean(torch.abs(pos_pred - pos_next)) / training_frames
+                # loss_root += torch.mean(torch.abs(root_pred - root_p_next)) / training_frames
+                # loss_quat += torch.mean(torch.abs(local_q_pred[0] - local_q_next)) / training_frames
+                # loss_contact += torch.mean(torch.abs(contact_pred[0] - contact_next)) / training_frames
 
             # Adversarial
             fake_pos_input = torch.cat([x.reshape(current_batch_size, -1).unsqueeze(-1) for x in pred_list[:-1]], -1)
@@ -341,7 +394,7 @@ def train():
             total_g_loss = config['model']['loss_sp_generator_weight'] * (sp_disc_code_loss + sp_g_fake_loss) + \
                            config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
         
-            loss_total = total_g_loss
+            loss_total = total_g_loss - div_adv
 
             # TOTAL LOSS
             loss_total.backward()
@@ -358,9 +411,8 @@ def train():
 
         summarywriter.add_scalar("LOSS/Generator", total_g_loss, epoch + 1)
         summarywriter.add_scalar("LOSS/Discriminator", total_d_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/L1 Loss", l1_loss * euc_loss_weight, epoch + 1)
+        summarywriter.add_scalar("LOSS/Divergence Advantage", div_adv, epoch + 1)
         summarywriter.add_scalar("LOSS/Total Loss (L1 + Generator)", loss_total, epoch + 1)
-        summarywriter.add_scalar("L1 Weight Scheduling", euc_loss_weight, epoch + 1)
 
         if (epoch + 1) % config['log']['weight_save_interval'] == 0:
             weight_epoch = 'trained_weight_' + str(epoch + 1)
