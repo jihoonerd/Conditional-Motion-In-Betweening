@@ -112,16 +112,12 @@ def train():
                                     betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
                                     amsgrad=True)
 
-    euc_loss_weight = 0.4
 
     for epoch in tqdm(range(config['model']['epochs']), position=0, desc="Epoch"):
 
         # Control transition length
         if lafan_dataset.cur_seq_length < lafan_dataset.max_transition_length:
             lafan_dataset.cur_seq_length =  np.int32(1/lafan_dataset.increase_rate * epoch + lafan_dataset.start_seq_length)
-
-        if 200 <= epoch:
-            euc_loss_weight = min(0.15, -0.5/400 * (epoch - 400) + 0.15)
 
         state_encoder.train()
         offset_encoder.train()
@@ -320,10 +316,10 @@ def train():
 
             generator_optimizer.zero_grad()
 
-            l1_loss = config['model']['loss_pos_weight'] * loss_pos + \
-                      config['model']['loss_quat_weight'] * loss_quat + \
-                      config['model']['loss_root_weight'] * loss_root + \
-                      config['model']['loss_contact_weight'] * loss_contact
+            # l1_loss = config['model']['loss_pos_weight'] * loss_pos + \
+            #           config['model']['loss_quat_weight'] * loss_quat + \
+            #           config['model']['loss_root_weight'] * loss_root + \
+            #           config['model']['loss_contact_weight'] * loss_contact
             
             # Adversarial
             ## Single pose generator
@@ -343,7 +339,7 @@ def train():
             total_g_loss = config['model']['loss_sp_generator_weight'] * (sp_disc_code_loss + sp_g_fake_loss) + \
                            config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
         
-            loss_total = l1_loss * euc_loss_weight + total_g_loss
+            loss_total = total_g_loss
 
             # TOTAL LOSS
             loss_total.backward()

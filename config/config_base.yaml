@@ -19,7 +19,7 @@ model:
     loss_sp_generator_weight: 1.0
     loss_generator_weight: 0.5
     target_noise: 0.5
-    saved_weight_path: 'model_weights/2021-06-14_14-54-17/trained_weight_310'
+    saved_weight_path: 'model_weights/2021-06-21_16-12-45/trained_weight_300'
     save_optimizer: False
     learning_rate: 0.001
     optim_beta1: 0.5
