@@ -293,7 +293,7 @@ def train():
                 contact_next = contact[:,t+1]
                 # EXP
                 noise_multiplier = noise_injector(t, length=training_frames)  # Noise injection
-                div_adv += torch.sum(pdist(div_0_root_pred, div_1_root_pred) * noise_multiplier)
+                div_adv += torch.mean(pdist(div_0_root_pred, div_1_root_pred) * noise_multiplier)
 
                 # Calculate L1 Norm
                 # 3.7.3: We scale all of our losses to be approximately equal on the LaFAN1 dataset 
@@ -394,7 +394,7 @@ def train():
             total_g_loss = config['model']['loss_sp_generator_weight'] * (sp_disc_code_loss + sp_g_fake_loss) + \
                            config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
         
-            loss_total = total_g_loss - div_adv
+            loss_total = total_g_loss - div_adv * config['model']['divergence_weight']
 
             # TOTAL LOSS
             loss_total.backward()
