@@ -108,7 +108,8 @@ def train():
                                 betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
                                 amsgrad=True)
 
-    discriminator_optimizer = Adam(params=list(short_discriminator.parameters()) +
+    discriminator_optimizer = Adam(params=list(single_pose_discriminator.parameters()) + 
+                                          list(short_discriminator.parameters()) +
                                           list(long_discriminator.parameters()),
                                     lr=config['model']['learning_rate'],
                                     betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
@@ -394,7 +395,8 @@ def train():
             total_g_loss = config['model']['loss_sp_generator_weight'] * (sp_disc_code_loss + sp_g_fake_loss) + \
                            config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
         
-            loss_total = total_g_loss - div_adv * config['model']['divergence_weight']
+            div_adv = torch.clamp(div_adv, max=0.3)
+            loss_total = total_g_loss - div_adv
 
             # TOTAL LOSS
             loss_total.backward()
@@ -405,14 +407,22 @@ def train():
             torch.nn.utils.clip_grad_norm_(target_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(lstm.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(decoder.parameters(), 1.0)
+
             generator_optimizer.step()
             batch_pbar.set_postfix({'LOSS': np.round(loss_total.item(), decimals=3)})
 
 
-        summarywriter.add_scalar("LOSS/Generator", total_g_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/Discriminator", total_d_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/Divergence Advantage", div_adv, epoch + 1)
-        summarywriter.add_scalar("LOSS/Total Loss (L1 + Generator)", loss_total, epoch + 1)
+        summarywriter.add_scalar("LOSS/SP Discriminator", sp_d_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/ST Discriminator", short_d_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/LT Discriminator", long_d_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/Total Discriminator", total_d_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/SP Generator", sp_g_fake_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/SP Code", sp_disc_code_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/ST Generator", short_g_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/LT Generator", long_g_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/Total Generator", loss_total, epoch + 1)
+
+        summarywriter.add_scalar("Divergence Advantage", div_adv, epoch + 1)
 
         if (epoch + 1) % config['log']['weight_save_interval'] == 0:
             weight_epoch = 'trained_weight_' + str(epoch + 1)
