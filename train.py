@@ -1,5 +1,6 @@
 import os
 import pathlib
+import shutil
 from datetime import datetime
 
 import numpy as np
@@ -10,6 +11,7 @@ from kpt.model.skeleton import TorchSkeleton
 from pymo.parsers import BVHParser
 from torch.optim import Adam
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
@@ -18,7 +20,6 @@ from rmi.model.network import (Decoder, InfoGANDiscriminator, InputEncoder,
                                LSTMNetwork, SinglePoseDiscriminator)
 from rmi.model.noise_injector import noise_injector
 from rmi.model.positional_encoding import PositionalEncoding
-from torch.utils.tensorboard.writer import SummaryWriter
 
 
 def train():
@@ -37,6 +38,7 @@ def train():
     time_stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     model_path = os.path.join('model_weights', time_stamp)
     pathlib.Path(model_path).mkdir(parents=True, exist_ok=True)
+    shutil.copyfile('./config/config_base.yaml', os.path.join(model_path, 'exp_config.yaml'))
 
     # Prepare Tensorboard
     tb_path = os.path.join('tensorboard', time_stamp)
@@ -51,7 +53,7 @@ def train():
     flip_bvh(config['data']['data_dir'])
 
     # Load LAFAN Dataset
-    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=False, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=config['model']['batch_size'], shuffle=True, num_workers=config['data']['data_loader_workers'])
 
     # Extract dimension from processed data
