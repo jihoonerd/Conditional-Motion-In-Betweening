@@ -87,7 +87,7 @@ def train():
     decoder.to(device)
 
     discriminator_in = lafan_dataset.num_joints * 3 * 2 # See Appendix
-    sp_discriminator_in = discriminator_in + local_q_dim
+    sp_discriminator_in = 364
     single_pose_discriminator = SinglePoseDiscriminator(input_dim=sp_discriminator_in, discrete_code_dim=infogan_code)
     single_pose_discriminator.to(device)
     short_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code, length=2)
@@ -175,6 +175,15 @@ def train():
             diverging_code_1[:, :, 1] = 1
 
             local_q_pred_list = []
+            local_q_cur_list = []
+            root_p_pred_list = []
+            root_p_cur_list = []
+
+            real_root_next_list = []
+            real_root_cur_list = []
+            real_q_next_list = []
+            real_q_cur_list = []
+
             for t in range(training_frames):
                 if t  == 0: # if initial frame
                     root_p_t = root_p[:,t]
@@ -250,11 +259,18 @@ def train():
                 local_q_pred = local_q_v_pred + local_q_t
                 local_q_pred_list.append(local_q_pred[0])
 
+                # EXP
+                local_q_cur_list.append(local_q_t)
+                
                 local_q_pred_ = local_q_pred.view(local_q_pred.size(0), local_q_pred.size(1), -1, 4)
                 local_q_pred_ = local_q_pred_ / torch.norm(local_q_pred_, dim = -1, keepdim = True)
 
                 root_v_pred = h_pred[:,:,target_in:]
                 root_pred = root_v_pred + root_p_t
+
+                # EXP
+                root_p_pred_list.append(root_pred[0])
+                root_p_cur_list.append(root_p_t)
 
                 # EXP
                 div_0_h_pred, div_0_contact_pred = decoder(h_div_0_out)
@@ -292,9 +308,15 @@ def train():
                 local_q_next = local_q_next.view(local_q_next.size(0), -1)
                 root_p_next = root_p[:,t+1]
                 contact_next = contact[:,t+1]
+
                 # EXP
                 noise_multiplier = noise_injector(t, length=training_frames)  # Noise injection
                 div_adv += torch.mean(pdist(div_0_root_pred, div_1_root_pred) * noise_multiplier)
+
+                real_root_next_list.append(root_p[:,t+1])
+                real_root_cur_list.append(root_p[:,t])
+                real_q_next_list.append(local_q[:,t+1].view(local_q_next.size(0), -1))
+                real_q_cur_list.append(local_q[:,t].view(local_q_next.size(0), -1))
 
                 # Calculate L1 Norm
                 # 3.7.3: We scale all of our losses to be approximately equal on the LaFAN1 dataset 
@@ -315,13 +337,28 @@ def train():
 
             assert fake_input.shape == real_input.shape
 
+            root_pred = torch.stack(root_p_pred_list, -1)
             single_pose_pred_quaternion = torch.stack(local_q_pred_list, -1)
             single_pose_real_quaternion = local_q[:,:lafan_dataset.cur_seq_length].reshape(current_batch_size, lafan_dataset.cur_seq_length, -1).permute(0,2,1)
 
             assert single_pose_pred_quaternion.shape == single_pose_real_quaternion.shape
 
-            single_pose_fake_input = torch.cat([fake_input, single_pose_pred_quaternion], dim=1)
-            single_pose_real_input = torch.cat([real_input, single_pose_real_quaternion], dim=1)
+            start_root = torch.stack([root_p[:, 0] for _ in range(lafan_dataset.max_transition_length)], dim=2)
+            start_quaternion = torch.stack([local_q[:,0,:,:].reshape(current_batch_size, -1) for _ in range(lafan_dataset.max_transition_length)], dim=2)
+
+            target_root = torch.stack([root_p[:, training_frames] for _ in range(lafan_dataset.max_transition_length)], dim=2)
+            target_quaternion = torch.stack([local_q[:,training_frames,:,:].reshape(current_batch_size, -1) for _ in range(lafan_dataset.max_transition_length)], dim=2)
+
+            current_root = torch.stack(root_p_cur_list, -1)
+            current_quaternion = torch.stack(local_q_cur_list, -1)
+
+            next_real_root = torch.stack(real_root_next_list, -1)
+            current_real_root = torch.stack(real_root_cur_list, -1)
+            next_real_quaternion = torch.stack(real_q_next_list, -1)
+            current_real_quaternion = torch.stack(real_q_cur_list, -1)
+
+            single_pose_fake_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_root, current_quaternion, root_pred, single_pose_pred_quaternion], dim=1)
+            single_pose_real_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_real_root, current_real_quaternion, next_real_root, next_real_quaternion], dim=1)
 
             ## Discriminator
             discriminator_optimizer.zero_grad()
@@ -329,12 +366,12 @@ def train():
             # InfoGAN Loss (maintain LSGAN for original gal V(D,G))
             
             ## Single pose discriminator
-            sp_fake_input = single_pose_fake_input.permute(0,2,1).reshape(-1, sp_discriminator_in).detach()
+            sp_fake_input = single_pose_fake_input.permute(0,2,1).reshape(-1, sp_discriminator_in)
             sp_d_fake_gan_out, _ = single_pose_discriminator(sp_fake_input.detach())
             sp_d_fake_gan_score = sp_d_fake_gan_out[:, 0]
 
-            sp_real_input = single_pose_real_input.permute(0,2,1).reshape(-1, sp_discriminator_in).detach()
-            sp_d_real_gan_out, _ = single_pose_discriminator(sp_real_input)
+            sp_real_input = single_pose_real_input.permute(0,2,1).reshape(-1, sp_discriminator_in)
+            sp_d_real_gan_out, _ = single_pose_discriminator(sp_real_input.detach())
             sp_d_real_gan_score = sp_d_real_gan_out[:, 0]
 
             sp_d_fake_loss = torch.mean((sp_d_fake_gan_score) ** 2)
@@ -395,7 +432,7 @@ def train():
             total_g_loss = config['model']['loss_sp_generator_weight'] * (sp_disc_code_loss + sp_g_fake_loss) + \
                            config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
         
-            div_adv = torch.clamp(div_adv, max=0.3)
+            div_adv = torch.clamp(div_adv, max=0.2)
             loss_total = total_g_loss - div_adv
 
             # TOTAL LOSS

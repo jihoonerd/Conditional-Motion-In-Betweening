@@ -105,7 +105,9 @@ class SinglePoseDiscriminator(nn.Module):
         self.single_pose_disc = nn.Sequential(
             nn.Linear(self.input_dim, self.input_dim),
             nn.ReLU(),
-            nn.Linear(self.input_dim, 128),
+            nn.Linear(self.input_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
             nn.ReLU(),
             nn.Linear(128, 64),
         )
