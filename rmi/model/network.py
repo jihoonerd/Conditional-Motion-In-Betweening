@@ -12,13 +12,16 @@ class InputEncoder(nn.Module):
         self.out_dim = out_dim
 
         self.fc1 = nn.Linear(input_dim, hidden_dim, bias=True)
-        self.fc2 = nn.Linear(hidden_dim, out_dim, bias=True)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim, bias=True)
+        self.fc3 = nn.Linear(hidden_dim, out_dim, bias=True)
 
     def forward(self, x):
         x = self.fc1(x)
-        x = PLU(x)
+        x = nn.ReLU(x)
         x = self.fc2(x)
-        x = PLU(x)
+        x = nn.ReLU(x)
+        x = self.fc3(x)
+        x = nn.ReLU(x)
         return x
 
 
@@ -53,17 +56,23 @@ class Decoder(nn.Module):
         self.out_dim = out_dim
 
         self.fc1 = nn.Linear(input_dim, hidden_dim, bias=True)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim // 2, bias=True)
-        self.fc3 = nn.Linear(hidden_dim // 2, out_dim - 4, bias=True)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim, bias=True)
+        self.fc3 = nn.Linear(hidden_dim, hidden_dim, bias=True)
+        self.fc4 = nn.Linear(hidden_dim, hidden_dim // 2, bias=True)
+        self.fc5 = nn.Linear(hidden_dim // 2, out_dim - 4, bias=True)
         self.fc_contact = nn.Linear(hidden_dim // 2, 4, bias=True)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = self.fc1(x)
-        x = PLU(x)
+        x = nn.ReLU(x)
         x = self.fc2(x)
-        x = PLU(x)
-        hidden_out = self.fc3(x)
+        x = nn.ReLU(x)
+        x = self.fc3(x)
+        x = nn.ReLU(x)
+        x = self.fc4(x)
+        x = nn.ReLU(x)
+        hidden_out = self.fc5(x)
         contact = self.fc_contact(x)
         contact_out = self.sigmoid(contact)
         return hidden_out, contact_out
@@ -107,23 +116,34 @@ class SinglePoseDiscriminator(nn.Module):
             nn.ReLU(),
             nn.Linear(self.input_dim, 256),
             nn.ReLU(),
-            nn.Linear(256, 128),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(128, 64),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
         )
 
         self.regular_gan = nn.Sequential(
-            nn.Linear(64, 32),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
             nn.LeakyReLU(0.1),
-            nn.Linear(32, 1)
+            nn.Linear(64, 1)
         )
 
         self.infogan_q = nn.Sequential(
-            nn.Linear(64, 64),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
             nn.LeakyReLU(0.1),
             nn.Linear(64, self.discrete_code_dim)
         )
-
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
