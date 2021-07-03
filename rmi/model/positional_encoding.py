@@ -20,14 +20,6 @@ class PositionalEncoding(nn.Module):
         pe = pe.unsqueeze(0)
         self.register_buffer("pe", pe)
 
-        # 3.3 This means that when dealing with transitions of length T max (trans), the model sees a constant
-        # z tta for 5 frames before it starts to vary.
-        ztta_const_part = self.pe[0][max_len - 5]
-        self.pe[0][max_len - 4] = ztta_const_part
-        self.pe[0][max_len - 3] = ztta_const_part
-        self.pe[0][max_len - 2] = ztta_const_part
-        self.pe[0][max_len - 1] = ztta_const_part
-
     def forward(self, x, tta: int):
         x = x + self.pe[:, tta - 1]
         return x

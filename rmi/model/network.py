@@ -15,13 +15,14 @@ class InputEncoder(nn.Module):
         self.fc2 = nn.Linear(hidden_dim, hidden_dim, bias=True)
         self.fc3 = nn.Linear(hidden_dim, out_dim, bias=True)
 
+        self.relu = nn.ReLU()
+
     def forward(self, x):
         x = self.fc1(x)
-        x = nn.ReLU(x)
+        x = self.relu(x)
         x = self.fc2(x)
-        x = nn.ReLU(x)
+        x = self.relu(x)
         x = self.fc3(x)
-        x = nn.ReLU(x)
         return x
 
 
@@ -54,6 +55,7 @@ class Decoder(nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.out_dim = out_dim
+        self.relu = nn.ReLU()
 
         self.fc1 = nn.Linear(input_dim, hidden_dim, bias=True)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim, bias=True)
@@ -65,13 +67,13 @@ class Decoder(nn.Module):
 
     def forward(self, x):
         x = self.fc1(x)
-        x = nn.ReLU(x)
+        x = self.relu(x)
         x = self.fc2(x)
-        x = nn.ReLU(x)
+        x = self.relu(x)
         x = self.fc3(x)
-        x = nn.ReLU(x)
+        x = self.relu(x)
         x = self.fc4(x)
-        x = nn.ReLU(x)
+        x = self.relu(x)
         hidden_out = self.fc5(x)
         contact = self.fc_contact(x)
         contact_out = self.sigmoid(contact)

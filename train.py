@@ -16,8 +16,7 @@ from tqdm import tqdm
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh, generate_infogan_code
-from rmi.model.network import (Decoder, InfoGANDiscriminator, InputEncoder,
-                               LSTMNetwork, SinglePoseDiscriminator)
+from rmi.model.network import Decoder, InfoGANDiscriminator, InputEncoder, LSTMNetwork, SinglePoseDiscriminator
 from rmi.model.noise_injector import noise_injector
 from rmi.model.positional_encoding import PositionalEncoding
 
@@ -53,7 +52,7 @@ def train():
     flip_bvh(config['data']['data_dir'])
 
     # Load LAFAN Dataset
-    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=False, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=config['model']['batch_size'], shuffle=True, num_workers=config['data']['data_loader_workers'])
 
     # Extract dimension from processed data
@@ -87,7 +86,7 @@ def train():
     decoder.to(device)
 
     discriminator_in = lafan_dataset.num_joints * 3 * 2 # See Appendix
-    sp_discriminator_in = 364
+    sp_discriminator_in = 372
     single_pose_discriminator = SinglePoseDiscriminator(input_dim=sp_discriminator_in, discrete_code_dim=infogan_code)
     single_pose_discriminator.to(device)
     short_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code, length=2)
@@ -131,10 +130,6 @@ def train():
 
         batch_pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
         for sampled_batch in batch_pbar:
-            loss_pos = 0
-            loss_quat = 0
-            loss_contact = 0
-            loss_root = 0
             div_adv = 0
 
             current_batch_size = len(sampled_batch['global_pos'])
@@ -159,9 +154,6 @@ def train():
             pred_list = []
             pred_list.append(global_pos[:,0])
 
-            # 3.4: target noise is sampled once per sequence
-            target_noise = torch.normal(mean=0, std=config['model']['target_noise'], size=root_v.shape, device=device)
-
             # Generating Frames
             training_frames = torch.randint(low=lafan_dataset.start_seq_length, high=lafan_dataset.cur_seq_length + 1, size=(1,))[0]
 
@@ -178,11 +170,16 @@ def train():
             local_q_cur_list = []
             root_p_pred_list = []
             root_p_cur_list = []
+            contact_pred_list = []
+            contact_cur_list = []
 
             real_root_next_list = []
             real_root_cur_list = []
             real_q_next_list = []
             real_q_cur_list = []
+
+            real_contact_next_list = []
+            real_contact_cur_list = []
 
             for t in range(training_frames):
                 if t  == 0: # if initial frame
@@ -207,34 +204,21 @@ def train():
                 # concatenate InfoGAN code
                 state_input = torch.cat([vanilla_state_input, infogan_code_gen[:, t]], dim=1)
 
-                ## EXP
-                diverging_state_0 = torch.cat([vanilla_state_input, diverging_code_0[:, t]], dim=1)
-                diverging_state_1 = torch.cat([vanilla_state_input, diverging_code_1[:, t]], dim=1)
-
                 # offset input
                 root_p_offset_t = root_p_offset - root_p_t
                 local_q_offset_t = local_q_offset - local_q_t
                 offset_input = torch.cat([root_p_offset_t, local_q_offset_t], -1)
+
                 # target input
                 target_input = target
 
                 h_state = state_encoder(state_input)
-
-                # EXP
-                h_state_diverging_0 = state_encoder(diverging_state_0)
-                h_state_diverging_1 = state_encoder(diverging_state_1)
-
                 h_offset = offset_encoder(offset_input)
                 h_target = target_encoder(target_input)
                 
                 # Use positional encoding
                 tta = training_frames - t
                 h_state = pe(h_state, tta)
-
-                # EXP
-                h_state_diverging_0 = pe(h_state_diverging_0, tta)
-                h_state_diverging_1 = pe(h_state_diverging_1, tta)
-
                 h_offset = pe(h_offset, tta)  # (batch size, 256)
                 h_target = pe(h_target, tta)  # (batch size, 256)
 
@@ -242,24 +226,14 @@ def train():
 
                 # lstm
                 h_in = torch.cat([h_state, offset_target], dim=1).unsqueeze(0)
-
-                # EXP
-                h_div_0_in = torch.cat([h_state_diverging_0, offset_target], dim=1).unsqueeze(0)
-                h_div_1_in = torch.cat([h_state_diverging_1, offset_target], dim=1).unsqueeze(0)
-
                 h_out = lstm(h_in)
-                
-                # EXP
-                h_div_0_out = lstm(h_div_0_in)
-                h_div_1_out = lstm(h_div_1_in)
 
                 # decoder
                 h_pred, contact_pred = decoder(h_out)
                 local_q_v_pred = h_pred[:,:,:target_in]
                 local_q_pred = local_q_v_pred + local_q_t
-                local_q_pred_list.append(local_q_pred[0])
 
-                # EXP
+                local_q_pred_list.append(local_q_pred[0])
                 local_q_cur_list.append(local_q_t)
                 
                 local_q_pred_ = local_q_pred.view(local_q_pred.size(0), local_q_pred.size(1), -1, 4)
@@ -268,26 +242,11 @@ def train():
                 root_v_pred = h_pred[:,:,target_in:]
                 root_pred = root_v_pred + root_p_t
 
-                # EXP
                 root_p_pred_list.append(root_pred[0])
                 root_p_cur_list.append(root_p_t)
 
-                # EXP
-                div_0_h_pred, div_0_contact_pred = decoder(h_div_0_out)
-                div_0_local_q_v_pred = div_0_h_pred[:,:,:target_in]
-                div_0_local_q_pred = div_0_local_q_v_pred + local_q_t
-                div_0_local_q_pred_ = div_0_local_q_pred.view(div_0_local_q_pred.size(0), div_0_local_q_pred.size(1), -1, 4)
-                div_0_local_q_pred_ = div_0_local_q_pred_ / torch.norm(div_0_local_q_pred_, dim = -1, keepdim = True)
-                div_0_root_v_pred = div_0_h_pred[:,:,target_in:]
-                div_0_root_pred = div_0_root_v_pred + root_p_t
-                
-                div_1_h_pred, div_1_contact_pred = decoder(h_div_1_out)
-                div_1_local_q_v_pred = div_1_h_pred[:,:,:target_in]
-                div_1_local_q_pred = div_1_local_q_v_pred + local_q_t
-                div_1_local_q_pred_ = div_1_local_q_pred.view(div_1_local_q_pred.size(0), div_1_local_q_pred.size(1), -1, 4)
-                div_1_local_q_pred_ = div_1_local_q_pred_ / torch.norm(div_1_local_q_pred_, dim = -1, keepdim = True)
-                div_1_root_v_pred = div_1_h_pred[:,:,target_in:]
-                div_1_root_pred = div_1_root_v_pred + root_p_t
+                contact_pred_list.append(contact_pred[0])
+                contact_cur_list.append(contact_t)
 
                 # FK
                 root_pred = root_pred.squeeze()
@@ -295,37 +254,52 @@ def train():
                 pos_pred, _ = skeleton.forward_kinematics(root_pred, local_q_pred_, rot_repr='quaternion')
                 pred_list.append(pos_pred)
 
-                # EXP
-                div_0_root_pred = div_0_root_pred.squeeze()
-                div_0_local_q_pred_ = div_0_local_q_pred_.squeeze()
-
-                div_1_root_pred = div_1_root_pred.squeeze()
-                div_1_local_q_pred_ = div_1_local_q_pred_.squeeze()
-
-                # Loss
-                pos_next = global_pos[:,t+1]
                 local_q_next = local_q[:,t+1]
                 local_q_next = local_q_next.view(local_q_next.size(0), -1)
-                root_p_next = root_p[:,t+1]
-                contact_next = contact[:,t+1]
 
-                # EXP
+                # Divergence
+                diverging_state_0 = torch.cat([vanilla_state_input, diverging_code_0[:, t]], dim=1)
+                diverging_state_1 = torch.cat([vanilla_state_input, diverging_code_1[:, t]], dim=1)
+
+                h_state_diverging_0 = state_encoder(diverging_state_0)
+                h_state_diverging_1 = state_encoder(diverging_state_1)
+                
+                h_state_diverging_0 = pe(h_state_diverging_0, tta)
+                h_state_diverging_1 = pe(h_state_diverging_1, tta)
+
+                h_div_0_in = torch.cat([h_state_diverging_0, offset_target], dim=1).unsqueeze(0)
+                h_div_1_in = torch.cat([h_state_diverging_1, offset_target], dim=1).unsqueeze(0)
+
+                h_div_0_out = lstm(h_div_0_in)
+                h_div_1_out = lstm(h_div_1_in)
+
+                div_0_h_pred, _ = decoder(h_div_0_out)
+                div_0_local_q_v_pred = div_0_h_pred[:,:,:target_in]
+                div_0_local_q_pred = div_0_local_q_v_pred + local_q_t
+                div_0_root_v_pred = div_0_h_pred[:,:,target_in:]
+                div_0_root_pred = div_0_root_v_pred + root_p_t
+                div_0_root_pred = div_0_root_pred.squeeze()
+                
+                div_1_h_pred, _ = decoder(h_div_1_out)
+                div_1_local_q_v_pred = div_1_h_pred[:,:,:target_in]
+                div_1_local_q_pred = div_1_local_q_v_pred + local_q_t
+                div_1_root_v_pred = div_1_h_pred[:,:,target_in:]
+                div_1_root_pred = div_1_root_v_pred + root_p_t
+                div_1_root_pred = div_1_root_pred.squeeze()
+
                 noise_multiplier = noise_injector(t, length=training_frames)  # Noise injection
-                div_adv += torch.mean(pdist(div_0_root_pred, div_1_root_pred) * noise_multiplier)
+                div_0_pred = torch.cat([div_0_root_pred, div_0_local_q_pred[0]], dim=1)
+                div_1_pred = torch.cat([div_1_root_pred, div_1_local_q_pred[0]], dim=1)
+                div_adv += torch.mean(pdist(div_0_pred, div_1_pred) * noise_multiplier * config['model']['pdist_scale'])
 
                 real_root_next_list.append(root_p[:,t+1])
                 real_root_cur_list.append(root_p[:,t])
                 real_q_next_list.append(local_q[:,t+1].view(local_q_next.size(0), -1))
                 real_q_cur_list.append(local_q[:,t].view(local_q_next.size(0), -1))
+                real_contact_next_list.append(contact[:,t+1])
+                real_contact_cur_list.append(contact[:,t])
 
-                # Calculate L1 Norm
-                # 3.7.3: We scale all of our losses to be approximately equal on the LaFAN1 dataset 
-                # for an untrained network before tuning them with custom weights.
-                # loss_pos += torch.mean(torch.abs(pos_pred - pos_next)) / training_frames
-                # loss_root += torch.mean(torch.abs(root_pred - root_p_next)) / training_frames
-                # loss_quat += torch.mean(torch.abs(local_q_pred[0] - local_q_next)) / training_frames
-                # loss_contact += torch.mean(torch.abs(contact_pred[0] - contact_next)) / training_frames
-
+                
             # Adversarial
             fake_pos_input = torch.cat([x.reshape(current_batch_size, -1).unsqueeze(-1) for x in pred_list[:-1]], -1)
             fake_v_input = torch.cat([fake_pos_input[:,:,1:] - fake_pos_input[:,:,:-1], torch.zeros_like(fake_pos_input[:,:,0:1], device=device)], -1)
@@ -350,15 +324,21 @@ def train():
             target_quaternion = torch.stack([local_q[:,training_frames,:,:].reshape(current_batch_size, -1) for _ in range(lafan_dataset.max_transition_length)], dim=2)
 
             current_root = torch.stack(root_p_cur_list, -1)
-            current_quaternion = torch.stack(local_q_cur_list, -1)
-
-            next_real_root = torch.stack(real_root_next_list, -1)
             current_real_root = torch.stack(real_root_cur_list, -1)
-            next_real_quaternion = torch.stack(real_q_next_list, -1)
-            current_real_quaternion = torch.stack(real_q_cur_list, -1)
+            next_real_root = torch.stack(real_root_next_list, -1)
 
-            single_pose_fake_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_root, current_quaternion, root_pred, single_pose_pred_quaternion], dim=1)
-            single_pose_real_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_real_root, current_real_quaternion, next_real_root, next_real_quaternion], dim=1)
+            current_quaternion = torch.stack(local_q_cur_list, -1)
+            current_real_quaternion = torch.stack(real_q_cur_list, -1)
+            next_real_quaternion = torch.stack(real_q_next_list, -1)
+
+            current_contact = torch.stack(contact_cur_list, -1)
+            pred_contact = torch.stack(contact_pred_list, -1)
+            current_real_contact = torch.stack(real_contact_cur_list, -1)
+            next_real_contact = torch.stack(real_contact_next_list, -1)
+
+
+            single_pose_fake_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_root, current_quaternion, current_contact, root_pred, single_pose_pred_quaternion, pred_contact], dim=1)
+            single_pose_real_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_real_root, current_real_quaternion, current_real_contact, next_real_root, next_real_quaternion, next_real_contact], dim=1)
 
             ## Discriminator
             discriminator_optimizer.zero_grad()
@@ -408,11 +388,6 @@ def train():
             discriminator_optimizer.step()
 
             generator_optimizer.zero_grad()
-
-            # l1_loss = config['model']['loss_pos_weight'] * loss_pos + \
-            #           config['model']['loss_quat_weight'] * loss_quat + \
-            #           config['model']['loss_root_weight'] * loss_root + \
-            #           config['model']['loss_contact_weight'] * loss_contact
             
             # Adversarial
             ## Single pose generator
@@ -432,7 +407,7 @@ def train():
             total_g_loss = config['model']['loss_sp_generator_weight'] * (sp_disc_code_loss + sp_g_fake_loss) + \
                            config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
         
-            div_adv = torch.clamp(div_adv, max=0.2)
+            div_adv = torch.clamp(div_adv, max=0.6)
             loss_total = total_g_loss - div_adv
 
             # TOTAL LOSS
@@ -447,7 +422,6 @@ def train():
 
             generator_optimizer.step()
             batch_pbar.set_postfix({'LOSS': np.round(loss_total.item(), decimals=3)})
-
 
         summarywriter.add_scalar("LOSS/SP Discriminator", sp_d_loss, epoch + 1)
         summarywriter.add_scalar("LOSS/ST Discriminator", short_d_loss, epoch + 1)
