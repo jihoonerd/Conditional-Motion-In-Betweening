@@ -10,16 +10,10 @@ model:
     lstm_hidden: 2048
     batch_size: 128
     epochs: 3000
-    loss_quat_weight: 1.0
-    loss_root_weight: 1.0
-    loss_pos_weight: 0.5
-    loss_contact_weight: 0.1
     loss_sp_discriminator_weight: 1.0
     loss_discriminator_weight: 0.1
     loss_sp_generator_weight: 1.0
     loss_generator_weight: 0.1
-    divergence_weight: 0.001
-    target_noise: 0.5
     saved_weight_path: 'model_weights/2021-06-29_00-11-09/trained_weight_330'
     save_optimizer: False
     learning_rate: 0.0001
