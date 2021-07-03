@@ -36,4 +36,4 @@ test:
     plot: true
     training_frames: 30
     inference_batch_index: 20
-    conditioning_code: 1
+    conditioning_code: 0
