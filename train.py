@@ -13,7 +13,7 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
-
+from torch.distributions.normal import Normal
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh, generate_infogan_code
 from rmi.model.network import Decoder, InfoGANDiscriminator, InputEncoder, LSTMNetwork, SinglePoseDiscriminator
@@ -52,7 +52,7 @@ def train():
     flip_bvh(config['data']['data_dir'])
 
     # Load LAFAN Dataset
-    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=False, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=config['model']['batch_size'], shuffle=True, num_workers=config['data']['data_loader_workers'])
 
     # Extract dimension from processed data
@@ -180,6 +180,9 @@ def train():
 
             real_contact_next_list = []
             real_contact_cur_list = []
+            
+            real_root_noise_dist = Normal(loc=torch.zeros(3, device=device), scale=1)
+            real_quaternion_noise_dist = Normal(loc=torch.zeros(88, device=device), scale=0.01)
 
             for t in range(training_frames):
                 if t  == 0: # if initial frame
@@ -325,10 +328,14 @@ def train():
 
             current_root = torch.stack(root_p_cur_list, -1)
             current_real_root = torch.stack(real_root_cur_list, -1)
+            current_real_root_noise = real_root_noise_dist.sample((128, 30)).permute(0,2,1)
+            current_real_root += current_real_root_noise
             next_real_root = torch.stack(real_root_next_list, -1)
 
             current_quaternion = torch.stack(local_q_cur_list, -1)
             current_real_quaternion = torch.stack(real_q_cur_list, -1)
+            current_real_quaternion_noise = torch.clamp(real_quaternion_noise_dist.sample((128, 30)).permute(0,2,1), min=-1, max=1)
+            current_real_quaternion += current_real_quaternion_noise
             next_real_quaternion = torch.stack(real_q_next_list, -1)
 
             current_contact = torch.stack(contact_cur_list, -1)
