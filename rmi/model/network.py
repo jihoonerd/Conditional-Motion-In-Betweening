@@ -115,21 +115,19 @@ class SinglePoseDiscriminator(nn.Module):
 
         self.single_pose_disc = nn.Sequential(
             nn.Linear(self.input_dim, self.input_dim),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Linear(self.input_dim, 256),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Linear(256, 256),
         )
 
         self.regular_gan = nn.Sequential(
             nn.Linear(256, 256),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Linear(256, 128),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Linear(128, 64),
             nn.LeakyReLU(0.1),
             nn.Linear(64, 1)
@@ -137,11 +135,11 @@ class SinglePoseDiscriminator(nn.Module):
 
         self.infogan_q = nn.Sequential(
             nn.Linear(256, 256),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Linear(256, 128),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Linear(128, 128),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Linear(128, 64),
             nn.LeakyReLU(0.1),
             nn.Linear(64, self.discrete_code_dim)
