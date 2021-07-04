@@ -418,7 +418,7 @@ def train():
             total_g_loss = config['model']['loss_sp_generator_weight'] * (sp_disc_code_loss + sp_g_fake_loss) + \
                            config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
         
-            div_adv = torch.clamp(div_adv, max=0.6)
+            div_adv = torch.clamp(div_adv, max=0.65)
             loss_total = total_g_loss - div_adv
 
             # TOTAL LOSS

@@ -134,8 +134,6 @@ class SinglePoseDiscriminator(nn.Module):
         )
 
         self.infogan_q = nn.Sequential(
-            nn.Linear(256, 256),
-            nn.LeakyReLU(0.1),
             nn.Linear(256, 128),
             nn.LeakyReLU(0.1),
             nn.Linear(128, 128),
