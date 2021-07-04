@@ -52,7 +52,7 @@ def train():
     flip_bvh(config['data']['data_dir'])
 
     # Load LAFAN Dataset
-    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=False, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=config['model']['batch_size'], shuffle=True, num_workers=config['data']['data_loader_workers'])
 
     # Extract dimension from processed data
@@ -354,11 +354,15 @@ def train():
             
             ## Single pose discriminator
             sp_fake_input = single_pose_fake_input.permute(0,2,1).reshape(-1, sp_discriminator_in)
-            sp_d_fake_gan_out, _ = single_pose_discriminator(sp_fake_input.detach())
+            sp_fake_rand_ind = torch.randperm(sp_fake_input.size()[0])
+            sp_fake_input_shuffle = sp_fake_input[sp_fake_rand_ind]
+            sp_d_fake_gan_out, _ = single_pose_discriminator(sp_fake_input_shuffle.detach())
             sp_d_fake_gan_score = sp_d_fake_gan_out[:, 0]
 
             sp_real_input = single_pose_real_input.permute(0,2,1).reshape(-1, sp_discriminator_in)
-            sp_d_real_gan_out, _ = single_pose_discriminator(sp_real_input.detach())
+            sp_real_rand_ind = torch.randperm(sp_real_input.size()[0])
+            sp_real_input_shuffle = sp_real_input[sp_real_rand_ind]
+            sp_d_real_gan_out, _ = single_pose_discriminator(sp_real_input_shuffle.detach())
             sp_d_real_gan_score = sp_d_real_gan_out[:, 0]
 
             sp_d_fake_loss = torch.mean((sp_d_fake_gan_score) ** 2)
@@ -398,7 +402,7 @@ def train():
             
             # Adversarial
             ## Single pose generator
-            sp_g_fake_gan_out, sp_g_fake_q_discrete = single_pose_discriminator(sp_fake_input)
+            sp_g_fake_gan_out, sp_g_fake_q_discrete = single_pose_discriminator(sp_fake_input_shuffle)
             sp_g_fake_gan_score = sp_g_fake_gan_out[:, 0]
             sp_g_fake_loss = torch.mean((sp_g_fake_gan_score - 1) ** 2)
             sp_disc_code_loss = infogan_disc_loss(sp_g_fake_q_discrete, fake_indices.reshape(sp_g_fake_q_discrete.shape[0]))
