@@ -120,7 +120,6 @@ class SinglePoseDiscriminator(nn.Module):
             nn.LeakyReLU(0.1),
             nn.Linear(256, 256),
             nn.LeakyReLU(0.1),
-            nn.Linear(256, 256),
         )
 
         self.regular_gan = nn.Sequential(

@@ -4,23 +4,24 @@ data:
     skeleton_path: 'ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh'
 
 device:
-    gpu_id: 1
+    gpu_id: 0
 
 model:
     lstm_hidden: 2048
     batch_size: 128
     epochs: 3000
     loss_sp_discriminator_weight: 1.0
+    loss_mi_weight: 1.5
     loss_discriminator_weight: 0.1
     loss_sp_generator_weight: 1.0
     loss_generator_weight: 0.1
-    saved_weight_path: 'model_weights/2021-07-04_09-04-31/trained_weight_60'
+    saved_weight_path: 'model_weights/2021-07-05_07-10-22/trained_weight_80'
     save_optimizer: False
     learning_rate: 0.0001
     optim_beta1: 0.5
     optim_beta2: 0.9
     infogan_code: 2
-    pdist_scale: 30
+    pdist_scale: 10
     
 log:
     weight_save_interval: 10
@@ -30,4 +31,4 @@ test:
     plot: true
     training_frames: 30
     inference_batch_index: 20
-    conditioning_code: 0
+    conditioning_code: 1

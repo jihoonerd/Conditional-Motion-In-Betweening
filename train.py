@@ -181,8 +181,8 @@ def train():
             real_contact_next_list = []
             real_contact_cur_list = []
             
-            real_root_noise_dist = Normal(loc=torch.zeros(3, device=device), scale=1)
-            real_quaternion_noise_dist = Normal(loc=torch.zeros(88, device=device), scale=0.01)
+            real_root_noise_dist = Normal(loc=torch.zeros(3, device=device), scale=0.5)
+            real_quaternion_noise_dist = Normal(loc=torch.zeros(88, device=device), scale=0.05)
 
             for t in range(training_frames):
                 if t  == 0: # if initial frame
@@ -354,15 +354,11 @@ def train():
             
             ## Single pose discriminator
             sp_fake_input = single_pose_fake_input.permute(0,2,1).reshape(-1, sp_discriminator_in)
-            sp_fake_rand_ind = torch.randperm(sp_fake_input.size()[0])
-            sp_fake_input_shuffle = sp_fake_input[sp_fake_rand_ind]
-            sp_d_fake_gan_out, _ = single_pose_discriminator(sp_fake_input_shuffle.detach())
+            sp_d_fake_gan_out, _ = single_pose_discriminator(sp_fake_input.detach())
             sp_d_fake_gan_score = sp_d_fake_gan_out[:, 0]
 
             sp_real_input = single_pose_real_input.permute(0,2,1).reshape(-1, sp_discriminator_in)
-            sp_real_rand_ind = torch.randperm(sp_real_input.size()[0])
-            sp_real_input_shuffle = sp_real_input[sp_real_rand_ind]
-            sp_d_real_gan_out, _ = single_pose_discriminator(sp_real_input_shuffle.detach())
+            sp_d_real_gan_out, _ = single_pose_discriminator(sp_real_input.detach())
             sp_d_real_gan_score = sp_d_real_gan_out[:, 0]
 
             sp_d_fake_loss = torch.mean((sp_d_fake_gan_score) ** 2)
@@ -402,7 +398,7 @@ def train():
             
             # Adversarial
             ## Single pose generator
-            sp_g_fake_gan_out, sp_g_fake_q_discrete = single_pose_discriminator(sp_fake_input_shuffle)
+            sp_g_fake_gan_out, sp_g_fake_q_discrete = single_pose_discriminator(sp_fake_input)
             sp_g_fake_gan_score = sp_g_fake_gan_out[:, 0]
             sp_g_fake_loss = torch.mean((sp_g_fake_gan_score - 1) ** 2)
             sp_disc_code_loss = infogan_disc_loss(sp_g_fake_q_discrete, fake_indices.reshape(sp_g_fake_q_discrete.shape[0]))
@@ -415,10 +411,11 @@ def train():
             long_g_score = torch.mean(long_g_fake_gan_out[:,0], dim=1)
             long_g_loss = torch.mean((long_g_score -  1) ** 2)
 
-            total_g_loss = config['model']['loss_sp_generator_weight'] * (sp_disc_code_loss + sp_g_fake_loss) + \
+            total_g_loss = config['model']['loss_sp_generator_weight'] * sp_g_fake_loss + \
+                           config['model']['loss_mi_weight'] * sp_disc_code_loss + \
                            config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
         
-            div_adv = torch.clamp(div_adv, max=0.65)
+            div_adv = torch.clamp(div_adv, max=0.7)
             loss_total = total_g_loss - div_adv
 
             # TOTAL LOSS
