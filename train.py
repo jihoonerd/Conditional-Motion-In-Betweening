@@ -52,7 +52,7 @@ def train():
     flip_bvh(config['data']['data_dir'])
 
     # Load LAFAN Dataset
-    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=False, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=config['model']['batch_size'], shuffle=True, num_workers=config['data']['data_loader_workers'])
 
     # Extract dimension from processed data
@@ -181,8 +181,8 @@ def train():
             real_contact_next_list = []
             real_contact_cur_list = []
             
-            real_root_noise_dist = Normal(loc=torch.zeros(3, device=device), scale=0.5)
-            real_quaternion_noise_dist = Normal(loc=torch.zeros(88, device=device), scale=0.05)
+            real_root_noise_dist = Normal(loc=torch.zeros(3, device=device), scale=0.1)
+            real_quaternion_noise_dist = Normal(loc=torch.zeros(88, device=device), scale=0.03)
 
             for t in range(training_frames):
                 if t  == 0: # if initial frame
