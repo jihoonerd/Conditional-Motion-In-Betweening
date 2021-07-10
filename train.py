@@ -52,7 +52,7 @@ def train():
     flip_bvh(config['data']['data_dir'])
 
     # Load LAFAN Dataset
-    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=False, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=config['model']['batch_size'], shuffle=True, num_workers=config['data']['data_loader_workers'])
 
     # Extract dimension from processed data
@@ -154,17 +154,17 @@ def train():
             pred_list = []
             pred_list.append(global_pos[:,0])
 
+            # InfoGAN code (per motion)
+            infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=ig_d_code_dim, device=device)
+            
             # Generating Frames
             training_frames = torch.randint(low=lafan_dataset.start_seq_length, high=lafan_dataset.cur_seq_length + 1, size=(1,))[0]
 
-            # Generate Infogan Code (batch, length, disc_code)
-            infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, sequence_length=training_frames, discrete_code_dim=ig_d_code_dim, device=device)
-            
             ## EXP
             diverging_code_0 = torch.zeros_like(infogan_code_gen, device=device)
-            diverging_code_0[:, :, 0] = 1
+            diverging_code_0[:, 0] = 1
             diverging_code_1 = torch.zeros_like(infogan_code_gen, device=device)
-            diverging_code_1[:, :, 1] = 1
+            diverging_code_1[:, 1] = 1
 
             local_q_pred_list = []
             local_q_cur_list = []
@@ -205,7 +205,7 @@ def train():
                 vanilla_state_input = torch.cat([local_q_t, root_v_t, contact_t], -1)
 
                 # concatenate InfoGAN code
-                state_input = torch.cat([vanilla_state_input, infogan_code_gen[:, t]], dim=1)
+                state_input = torch.cat([vanilla_state_input, infogan_code_gen], dim=1)
 
                 # offset input
                 root_p_offset_t = root_p_offset - root_p_t
@@ -261,8 +261,8 @@ def train():
                 local_q_next = local_q_next.view(local_q_next.size(0), -1)
 
                 # Divergence
-                diverging_state_0 = torch.cat([vanilla_state_input, diverging_code_0[:, t]], dim=1)
-                diverging_state_1 = torch.cat([vanilla_state_input, diverging_code_1[:, t]], dim=1)
+                diverging_state_0 = torch.cat([vanilla_state_input, diverging_code_0], dim=1)
+                diverging_state_1 = torch.cat([vanilla_state_input, diverging_code_1], dim=1)
 
                 h_state_diverging_0 = state_encoder(diverging_state_0)
                 h_state_diverging_1 = state_encoder(diverging_state_1)
@@ -401,7 +401,9 @@ def train():
             sp_g_fake_gan_out, sp_g_fake_q_discrete = single_pose_discriminator(sp_fake_input)
             sp_g_fake_gan_score = sp_g_fake_gan_out[:, 0]
             sp_g_fake_loss = torch.mean((sp_g_fake_gan_score - 1) ** 2)
-            sp_disc_code_loss = infogan_disc_loss(sp_g_fake_q_discrete, fake_indices.reshape(sp_g_fake_q_discrete.shape[0]))
+
+            fake_indices_expanded = fake_indices.unsqueeze(1).expand(fake_indices.shape[0], training_frames).reshape(sp_g_fake_q_discrete.shape[0])
+            sp_disc_code_loss = infogan_disc_loss(sp_g_fake_q_discrete, fake_indices_expanded)
 
             short_g_fake_gan_out, _ = short_discriminator(fake_input)
             short_g_score = torch.mean(short_g_fake_gan_out[:,0], dim=1)
@@ -415,7 +417,7 @@ def train():
                            config['model']['loss_mi_weight'] * sp_disc_code_loss + \
                            config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
         
-            div_adv = torch.clamp(div_adv, max=0.7)
+            div_adv = torch.clamp(div_adv, max=0.3)
             loss_total = total_g_loss - div_adv
 
             # TOTAL LOSS
