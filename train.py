@@ -421,20 +421,22 @@ def train():
             fake_indices_expanded = fake_indices.unsqueeze(1).expand(fake_indices.shape[0], training_frames).reshape(sp_g_fake_q_discrete.shape[0])
             sp_disc_code_loss = infogan_disc_loss(sp_g_fake_q_discrete, fake_indices_expanded)
 
-            short_g_fake_gan_out, _ = short_discriminator(fake_input)
+            short_g_fake_gan_out, short_fake_q_discrete = short_discriminator(fake_input)
             short_g_score = torch.mean(short_g_fake_gan_out[:,0], dim=1)
             short_g_loss = torch.mean((short_g_score -  1) ** 2)
+            short_disc_code_loss = infogan_disc_loss(short_fake_q_discrete, fake_indices)
 
-            long_g_fake_gan_out, _ = long_discriminator(fake_input)
+            long_g_fake_gan_out, long_fake_q_discrete = long_discriminator(fake_input)
             long_g_score = torch.mean(long_g_fake_gan_out[:,0], dim=1)
             long_g_loss = torch.mean((long_g_score -  1) ** 2)
+            long_disc_code_loss = infogan_disc_loss(long_fake_q_discrete, fake_indices)
 
             total_g_loss =  config['model']['loss_pos_weight'] * loss_pos + \
                             config['model']['loss_quat_weight'] * loss_quat + \
                             config['model']['loss_root_weight'] * loss_root + \
                             config['model']['loss_contact_weight'] * loss_contact + \
                             config['model']['loss_sp_generator_weight'] * sp_g_fake_loss + \
-                            config['model']['loss_mi_weight'] * sp_disc_code_loss + \
+                            config['model']['loss_mi_weight'] * (sp_disc_code_loss + short_disc_code_loss + long_disc_code_loss) + \
                             config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
         
             div_adv = torch.clamp(div_adv, max=0.3)
