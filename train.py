@@ -130,6 +130,10 @@ def train():
 
         batch_pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
         for sampled_batch in batch_pbar:
+            loss_pos = 0
+            loss_quat = 0
+            loss_contact = 0
+            loss_root = 0
             div_adv = 0
 
             current_batch_size = len(sampled_batch['global_pos'])
@@ -257,8 +261,21 @@ def train():
                 pos_pred, _ = skeleton.forward_kinematics(root_pred, local_q_pred_, rot_repr='quaternion')
                 pred_list.append(pos_pred)
 
+                # Loss
+                pos_next = global_pos[:,t+1]
                 local_q_next = local_q[:,t+1]
                 local_q_next = local_q_next.view(local_q_next.size(0), -1)
+                root_p_next = root_p[:,t+1]
+                contact_next = contact[:,t+1]
+
+                # Calculate L1 Norm
+                # 3.7.3: We scale all of our losses to be approximately equal on the LaFAN1 dataset 
+                # for an untrained network before tuning them with custom weights.
+                loss_pos += torch.mean(torch.abs(pos_pred - pos_next) / lafan_dataset.global_pos_std) / lafan_dataset.cur_seq_length
+                loss_root += torch.mean(torch.abs(root_pred - root_p_next) / lafan_dataset.global_pos_std[0]) / lafan_dataset.cur_seq_length
+                loss_quat += torch.mean(torch.abs(local_q_pred[0] - local_q_next)) / lafan_dataset.cur_seq_length
+                loss_contact += torch.mean(torch.abs(contact_pred[0] - contact_next)) / lafan_dataset.cur_seq_length
+
 
                 # Divergence
                 diverging_state_0 = torch.cat([vanilla_state_input, diverging_code_0], dim=1)
@@ -343,7 +360,6 @@ def train():
             current_real_contact = torch.stack(real_contact_cur_list, -1)
             next_real_contact = torch.stack(real_contact_next_list, -1)
 
-
             single_pose_fake_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_root, current_quaternion, current_contact, root_pred, single_pose_pred_quaternion, pred_contact], dim=1)
             single_pose_real_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_real_root, current_real_quaternion, current_real_contact, next_real_root, next_real_quaternion, next_real_contact], dim=1)
 
@@ -413,9 +429,13 @@ def train():
             long_g_score = torch.mean(long_g_fake_gan_out[:,0], dim=1)
             long_g_loss = torch.mean((long_g_score -  1) ** 2)
 
-            total_g_loss = config['model']['loss_sp_generator_weight'] * sp_g_fake_loss + \
-                           config['model']['loss_mi_weight'] * sp_disc_code_loss + \
-                           config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
+            total_g_loss =  config['model']['loss_pos_weight'] * loss_pos + \
+                            config['model']['loss_quat_weight'] * loss_quat + \
+                            config['model']['loss_root_weight'] * loss_root + \
+                            config['model']['loss_contact_weight'] * loss_contact + \
+                            config['model']['loss_sp_generator_weight'] * sp_g_fake_loss + \
+                            config['model']['loss_mi_weight'] * sp_disc_code_loss + \
+                            config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
         
             div_adv = torch.clamp(div_adv, max=0.3)
             loss_total = total_g_loss - div_adv
@@ -433,14 +453,19 @@ def train():
             generator_optimizer.step()
             batch_pbar.set_postfix({'LOSS': np.round(loss_total.item(), decimals=3)})
 
-        summarywriter.add_scalar("LOSS/SP Discriminator", sp_d_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/ST Discriminator", short_d_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/LT Discriminator", long_d_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/Positional Loss", config['model']['loss_pos_weight'] * loss_pos, epoch + 1)
+        summarywriter.add_scalar("LOSS/Quaternion Loss", config['model']['loss_quat_weight'] * loss_quat, epoch + 1)
+        summarywriter.add_scalar("LOSS/Root Loss", config['model']['loss_root_weight'] * loss_root, epoch + 1)
+        summarywriter.add_scalar("LOSS/Contact Loss", config['model']['loss_contact_weight'] * loss_contact, epoch + 1)
+
+        summarywriter.add_scalar("LOSS/SP Discriminator", config['model']['loss_sp_discriminator_weight'] * (sp_d_loss), epoch + 1)
+        summarywriter.add_scalar("LOSS/ST Discriminator(Not Weighted)", short_d_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/LT Discriminator(Not Weighted)", long_d_loss, epoch + 1)
         summarywriter.add_scalar("LOSS/Total Discriminator", total_d_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/SP Generator", sp_g_fake_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/SP Code", sp_disc_code_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/ST Generator", short_g_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/LT Generator", long_g_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/SP Generator", config['model']['loss_sp_generator_weight'] * sp_g_fake_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/SP Code", config['model']['loss_mi_weight'] * sp_disc_code_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/ST Generator(Not Weighted)", short_g_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/LT Generator(Not Weighted)", long_g_loss, epoch + 1)
         summarywriter.add_scalar("LOSS/Total Generator", loss_total, epoch + 1)
 
         summarywriter.add_scalar("Divergence Advantage", div_adv, epoch + 1)

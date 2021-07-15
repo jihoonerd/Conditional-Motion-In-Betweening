@@ -15,6 +15,10 @@ model:
     loss_discriminator_weight: 0.1
     loss_sp_generator_weight: 1.0
     loss_generator_weight: 0.1
+    loss_pos_weight: 0.2
+    loss_quat_weight: 0.2
+    loss_root_weight: 0.5
+    loss_contact_weight: 0.2
     saved_weight_path: 'model_weights/2021-07-06_13-39-53/trained_weight_300'
     save_optimizer: False
     learning_rate: 0.0001
