@@ -2,7 +2,7 @@ import os
 import pathlib
 import shutil
 from datetime import datetime
-
+import pickle
 import numpy as np
 import torch
 import torch.nn as nn
@@ -52,7 +52,15 @@ def train():
     flip_bvh(config['data']['data_dir'])
 
     # Load LAFAN Dataset
-    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    saved_train = config['data']['saved_train']
+    if os.path.exists(saved_train):
+        print("Saved Pickle File Found.")
+        with open(saved_train, 'rb') as f:
+            lafan_dataset = pickle.load(f)
+    else:
+        lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+        with open(saved_train, 'wb') as f:
+            pickle.dump(lafan_dataset, f)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=config['model']['batch_size'], shuffle=True, num_workers=config['data']['data_loader_workers'])
 
     # Extract dimension from processed data
@@ -116,11 +124,16 @@ def train():
 
     pdist = nn.PairwiseDistance(p=2)
 
+    teacher_forcing = config['model']['teacher_forcing']
+
     for epoch in tqdm(range(config['model']['epochs']), position=0, desc="Epoch"):
 
         # Control transition length
         if lafan_dataset.cur_seq_length < lafan_dataset.max_transition_length:
             lafan_dataset.cur_seq_length =  np.int32(1/lafan_dataset.increase_rate * epoch + lafan_dataset.start_seq_length)
+
+        teacher_forcing *= 0.975
+        teacher_forcing_prob = max(0.05, teacher_forcing)
 
         state_encoder.train()
         offset_encoder.train()
@@ -130,6 +143,10 @@ def train():
 
         batch_pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
         for sampled_batch in batch_pbar:
+            
+            # sample from bernoulli by using teacher_forcing_prob
+            teacher_forcing_bool = np.random.random() < teacher_forcing_prob
+
             loss_pos = 0
             loss_quat = 0
             loss_contact = 0
@@ -189,12 +206,11 @@ def train():
             real_quaternion_noise_dist = Normal(loc=torch.zeros(88, device=device), scale=0.03)
 
             for t in range(training_frames):
-                if t  == 0: # if initial frame
+                if (t  == 0) or teacher_forcing_bool: # if initial frame
                     root_p_t = root_p[:,t]
                     root_v_t = root_v[:,t]
 
-                    local_q_t = local_q[:,t]
-                    local_q_t = local_q_t.view(local_q_t.size(0), -1)
+                    local_q_t = local_q[:,t].view(local_q[:,t].size(0), -1)
                     contact_t = contact[:,t]
                 else:
                     root_p_t = root_pred  # Be careful about dimension
@@ -237,7 +253,9 @@ def train():
 
                 # decoder
                 h_pred, contact_pred = decoder(h_out)
+
                 local_q_v_pred = h_pred[:,:,:target_in]
+                
                 local_q_pred = local_q_v_pred + local_q_t
 
                 local_q_pred_list.append(local_q_pred[0])

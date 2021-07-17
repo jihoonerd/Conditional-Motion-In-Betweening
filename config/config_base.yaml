@@ -2,23 +2,25 @@ data:
     data_dir: 'ubisoft-laforge-animation-dataset/output/BVH'
     data_loader_workers: 4
     skeleton_path: 'ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh'
+    saved_train: 'lafan_train.pkl'
 
 device:
-    gpu_id: 1
+    gpu_id: 0
 
 model:
+    teacher_forcing: 0.8
     lstm_hidden: 1024
     batch_size: 128
     epochs: 3000
     loss_sp_discriminator_weight: 1.0
     loss_mi_weight: 1.0
-    loss_discriminator_weight: 0.1
+    loss_discriminator_weight: 0.3
     loss_sp_generator_weight: 1.0
-    loss_generator_weight: 0.1
-    loss_pos_weight: 0.2
-    loss_quat_weight: 0.2
-    loss_root_weight: 0.5
-    loss_contact_weight: 0.2
+    loss_generator_weight: 0.3
+    loss_pos_weight: 1.0
+    loss_quat_weight: 1.0
+    loss_root_weight: 1.0
+    loss_contact_weight: 0.3
     saved_weight_path: 'model_weights/2021-07-16_01-34-18/trained_weight_90'
     save_optimizer: False
     learning_rate: 0.0002
