@@ -2,11 +2,13 @@ data:
     data_dir: 'ubisoft-laforge-animation-dataset/output/BVH'
     data_loader_workers: 4
     skeleton_path: 'ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh'
+    saved_train: 'lafan_train.pkl'
 
 device:
-    gpu_id: 1
+    gpu_id: 0
 
 model:
+    teacher_forcing: 0.8
     lstm_hidden: 1024
     batch_size: 128
     epochs: 3000
