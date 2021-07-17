@@ -19,7 +19,7 @@ model:
     loss_quat_weight: 0.2
     loss_root_weight: 0.5
     loss_contact_weight: 0.2
-    saved_weight_path: 'model_weights/2021-07-06_13-39-53/trained_weight_300'
+    saved_weight_path: 'model_weights/2021-07-16_01-34-18/trained_weight_90'
     save_optimizer: False
     learning_rate: 0.0002
     optim_beta1: 0.5
@@ -35,4 +35,4 @@ test:
     plot: true
     training_frames: 30
     inference_batch_index: 20
-    conditioning_code: 1
+    conditioning_code: 0
