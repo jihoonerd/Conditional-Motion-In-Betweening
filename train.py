@@ -2,7 +2,7 @@ import os
 import pathlib
 import shutil
 from datetime import datetime
-
+import pickle
 import numpy as np
 import torch
 import torch.nn as nn
@@ -52,7 +52,15 @@ def train():
     flip_bvh(config['data']['data_dir'])
 
     # Load LAFAN Dataset
-    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    saved_train = config['data']['saved_train']
+    if os.path.exists(saved_train):
+        print("Saved Pickle File Found.")
+        with open(saved_train, 'rb') as f:
+            lafan_dataset = pickle.load(f)
+    else:
+        lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+        with open(saved_train, 'wb') as f:
+            pickle.dump(lafan_dataset, f)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=config['model']['batch_size'], shuffle=True, num_workers=config['data']['data_loader_workers'])
 
     # Extract dimension from processed data
@@ -254,6 +262,9 @@ def train():
 
                 contact_pred_list.append(contact_pred[0])
                 contact_cur_list.append(contact_t)
+
+                ## Teacher Forcing
+
 
                 # FK
                 root_pred = root_pred.squeeze()

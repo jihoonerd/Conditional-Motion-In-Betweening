@@ -7,6 +7,7 @@ PyMO
 ubisoft-laforge-animation-dataset/
 tensorboard/
 tb_old/**
+lafan_train.pkl
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
