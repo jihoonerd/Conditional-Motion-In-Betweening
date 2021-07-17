@@ -254,13 +254,7 @@ def train():
                 # decoder
                 h_pred, contact_pred = decoder(h_out)
 
-                if teacher_forcing_bool:
-                    contact_pred = contact[:,t].unsqueeze(0)
-
-                if teacher_forcing_bool:
-                    local_q_v_pred = (local_q[:,t+1] - local_q[:,t]).view(local_q[:,t].size(0), -1).unsqueeze(0)
-                else:
-                    local_q_v_pred = h_pred[:,:,:target_in]
+                local_q_v_pred = h_pred[:,:,:target_in]
                 
                 local_q_pred = local_q_v_pred + local_q_t
 
@@ -270,10 +264,7 @@ def train():
                 local_q_pred_ = local_q_pred.view(local_q_pred.size(0), local_q_pred.size(1), -1, 4)
                 local_q_pred_ = local_q_pred_ / torch.norm(local_q_pred_, dim = -1, keepdim = True)
 
-                if teacher_forcing_bool:
-                    root_v_pred = root_v[:,t].unsqueeze(0)
-                else:
-                    root_v_pred = h_pred[:,:,target_in:]
+                root_v_pred = h_pred[:,:,target_in:]
                 root_pred = root_v_pred + root_p_t
 
                 root_p_pred_list.append(root_pred[0])
@@ -281,7 +272,6 @@ def train():
 
                 contact_pred_list.append(contact_pred[0])
                 contact_cur_list.append(contact_t)
-
 
                 # FK
                 root_pred = root_pred.squeeze()
