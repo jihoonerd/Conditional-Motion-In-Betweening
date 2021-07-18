@@ -129,7 +129,7 @@ def train():
         if lafan_dataset.cur_seq_length < lafan_dataset.max_transition_length:
             lafan_dataset.cur_seq_length =  np.int32(1/lafan_dataset.increase_rate * epoch + lafan_dataset.start_seq_length)
 
-        teacher_forcing *= 0.975
+        teacher_forcing *= config['model']['teacher_forcing_decay']
         teacher_forcing_prob = max(0.05, teacher_forcing)
 
         state_encoder.train()

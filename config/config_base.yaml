@@ -9,21 +9,20 @@ device:
 
 model:
     teacher_forcing: 0.8
+    teacher_forcing_decay: 0.95
     lstm_hidden: 1024
-    batch_size: 128
+    batch_size: 64
     epochs: 3000
-    loss_sp_discriminator_weight: 1.0
-    loss_mi_weight: 1.0
-    loss_discriminator_weight: 0.3
-    loss_sp_generator_weight: 1.0
-    loss_generator_weight: 0.3
-    loss_pos_weight: 1.0
+    loss_discriminator_weight: 1.0
+    loss_mi_weight: 0.5
+    loss_generator_weight: 1.0
+    loss_pos_weight: 0.2
     loss_quat_weight: 1.0
     loss_root_weight: 1.0
-    loss_contact_weight: 0.3
+    loss_contact_weight: 0.1
     saved_weight_path: 'model_weights/2021-07-16_01-34-18/trained_weight_90'
     save_optimizer: False
-    learning_rate: 0.0002
+    learning_rate: 0.001
     optim_beta1: 0.5
     optim_beta2: 0.9
     infogan_code: 2
