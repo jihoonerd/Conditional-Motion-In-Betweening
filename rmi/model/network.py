@@ -96,30 +96,32 @@ class Discriminator(nn.Module):
         x = self.fc3(x)
         return x
 
-class SinglePoseDiscriminator(nn.Module):
+class InfoDiscriminator(nn.Module):
     def __init__(self, input_dim, discrete_code_dim):
         super().__init__()
         self.input_dim = input_dim
         self.discrete_code_dim =  discrete_code_dim
 
         self.single_pose_disc = nn.Sequential(
-            nn.Linear(self.input_dim, self.input_dim),
-            nn.ReLU(),
             nn.Linear(self.input_dim, 256),
             nn.ReLU(),
-            nn.Linear(256, 128),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(128, 64),
+            nn.Linear(256, 256),
         )
 
         self.regular_gan = nn.Sequential(
-            nn.Linear(64, 32),
+            nn.Linear(256, 128),
             nn.LeakyReLU(0.1),
-            nn.Linear(32, 1)
+            nn.Linear(128, 128),
+            nn.LeakyReLU(0.1),
+            nn.Linear(128, 1)
         )
 
         self.infogan_q = nn.Sequential(
-            nn.Linear(64, 64),
+            nn.Linear(256, 128),
+            nn.LeakyReLU(0.1),
+            nn.Linear(128, 64),
             nn.LeakyReLU(0.1),
             nn.Linear(64, self.discrete_code_dim)
         )
@@ -132,38 +134,3 @@ class SinglePoseDiscriminator(nn.Module):
 
         q_out = self.infogan_q(discriminator_out)
         return regular_gan_out, q_out
-
-
-class InfoGANDiscriminator(nn.Module):
-    # refer: 3.5 Motion discriminators, 3.7.2 sliding critics
-    def __init__(self, input_dim=128, hidden_dim=128, discrete_code_dim=4, out_dim=1, length=3):
-        super().__init__()
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-        self.out_dim = out_dim
-        self.discrete_code_dim = discrete_code_dim
-        self.length = length
-
-        self.regular_gan = nn.Sequential(
-            nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=self.length),
-            nn.ReLU(),
-            nn.Conv1d(self.hidden_dim, self.hidden_dim // 2, kernel_size=1),
-            nn.ReLU(),
-            nn.Conv1d(self.hidden_dim // 2, out_dim, kernel_size=1),
-        )
-
-        self.infogan_q = nn.Sequential(
-            nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=self.length),
-            nn.LeakyReLU(0.1),
-            nn.Conv1d(self.hidden_dim, self.hidden_dim // 2, kernel_size=1),
-            nn.LeakyReLU(0.1),
-            nn.Conv1d(self.hidden_dim // 2, discrete_code_dim, kernel_size=1),
-        )
-
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        regular_gan_out = self.sigmoid(self.regular_gan(x))
-        q_out = self.infogan_q(x)
-        q_discrete = torch.mean(q_out, dim=2)  # TODO: validate this. Is it okay to take mean for in-window data?
-        return regular_gan_out, q_discrete
