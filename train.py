@@ -16,7 +16,7 @@ from tqdm import tqdm
 from torch.distributions.normal import Normal
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh, generate_infogan_code
-from rmi.model.network import Decoder, InfoGANDiscriminator, InputEncoder, LSTMNetwork, SinglePoseDiscriminator
+from rmi.model.network import Decoder, InputEncoder, LSTMNetwork, InfoDiscriminator
 from rmi.model.noise_injector import noise_injector
 from rmi.model.positional_encoding import PositionalEncoding
 
@@ -93,14 +93,12 @@ def train():
     decoder = Decoder(input_dim=lstm_hidden, out_dim=state_in)
     decoder.to(device)
 
-    discriminator_in = lafan_dataset.num_joints * 3 * 2 # See Appendix
     sp_discriminator_in = 372
-    single_pose_discriminator = SinglePoseDiscriminator(input_dim=sp_discriminator_in, discrete_code_dim=infogan_code)
-    single_pose_discriminator.to(device)
-    short_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code, length=2)
-    short_discriminator.to(device)
-    long_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code, length=5)
-    long_discriminator.to(device)
+
+    lstm_discriminator = LSTMNetwork(input_dim=sp_discriminator_in, hidden_dim=512, device=device)
+    lstm_discriminator.to(device)
+    lstm_extractor = InfoDiscriminator(input_dim=512, discrete_code_dim=infogan_code)
+    lstm_extractor.to(device)
 
     infogan_disc_loss = nn.CrossEntropyLoss()
 
@@ -115,9 +113,8 @@ def train():
                                 betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
                                 amsgrad=True)
 
-    discriminator_optimizer = Adam(params=list(single_pose_discriminator.parameters()) + 
-                                          list(short_discriminator.parameters()) +
-                                          list(long_discriminator.parameters()),
+    discriminator_optimizer = Adam(params=list(lstm_discriminator.parameters()) +
+                                          list(lstm_extractor.parameters()),
                                     lr=config['model']['learning_rate'],
                                     betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
                                     amsgrad=True)
@@ -381,83 +378,47 @@ def train():
             single_pose_fake_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_root, current_quaternion, current_contact, root_pred, single_pose_pred_quaternion, pred_contact], dim=1)
             single_pose_real_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_real_root, current_real_quaternion, current_real_contact, next_real_root, next_real_quaternion, next_real_contact], dim=1)
 
-            ## Discriminator
+            ## Adversarial Discriminator
             discriminator_optimizer.zero_grad()
 
-            # InfoGAN Loss (maintain LSGAN for original gal V(D,G))
-            
-            ## Single pose discriminator
-            sp_fake_input = single_pose_fake_input.permute(0,2,1).reshape(-1, sp_discriminator_in)
-            sp_d_fake_gan_out, _ = single_pose_discriminator(sp_fake_input.detach())
-            sp_d_fake_gan_score = sp_d_fake_gan_out[:, 0]
+            ## LSTM Discriminator
+            lstm_discriminator.init_hidden(current_batch_size)
+            fake_lstm_disc_out = lstm_discriminator(single_pose_fake_input.permute(2,0,1).detach())[-1]
+            d_fake_gan_out, _ = lstm_extractor(fake_lstm_disc_out)
+            d_fake_gan_score = d_fake_gan_out[:, 0]
 
-            sp_real_input = single_pose_real_input.permute(0,2,1).reshape(-1, sp_discriminator_in)
-            sp_d_real_gan_out, _ = single_pose_discriminator(sp_real_input.detach())
-            sp_d_real_gan_score = sp_d_real_gan_out[:, 0]
+            lstm_discriminator.init_hidden(current_batch_size)
+            real_lstm_disc_out = lstm_discriminator(single_pose_real_input.permute(2,0,1).detach())[-1]
+            d_real_gan_out, _ = lstm_extractor(real_lstm_disc_out)
+            d_real_gan_score = d_real_gan_out[:, 0]
 
-            sp_d_fake_loss = torch.mean((sp_d_fake_gan_score) ** 2)
-            sp_d_real_loss = torch.mean((sp_d_real_gan_score - 1) ** 2)
-            sp_d_loss = (sp_d_fake_loss + sp_d_real_loss) / 2.0
+            lstm_d_fake_loss = torch.mean((d_fake_gan_score) ** 2)
+            lstm_d_real_loss = torch.mean((d_real_gan_score - 1) ** 2)
+            lstm_d_loss = (lstm_d_fake_loss + lstm_d_real_loss) / 2.0
 
-            ## Short discriminator
-            short_d_fake_gan_out, _ = short_discriminator(fake_input.detach())
-            short_d_fake_gan_score = torch.mean(short_d_fake_gan_out[:,0], dim=1)
-
-            short_d_real_gan_out, _ = short_discriminator(real_input)
-            short_d_real_gan_score = torch.mean(short_d_real_gan_out[:,0], dim=1)
-
-            short_d_fake_loss = torch.mean((short_d_fake_gan_score) ** 2)  
-            short_d_real_loss = torch.mean((short_d_real_gan_score -  1) ** 2)
-
-            short_d_loss = (short_d_fake_loss + short_d_real_loss) / 2.0
-
-            ## Long  discriminator
-            long_d_fake_gan_out, _ = long_discriminator(fake_input.detach())
-            long_d_fake_gan_score = torch.mean(long_d_fake_gan_out[:,0], dim=1)
-
-            long_d_real_gan_out, _ = long_discriminator(real_input)
-            long_d_real_gan_score = torch.mean(long_d_real_gan_out[:,0], dim=1)
-
-            long_d_fake_loss = torch.mean((long_d_fake_gan_score) ** 2)
-            long_d_real_loss = torch.mean((long_d_real_gan_score -  1) ** 2)
-
-            long_d_loss = (long_d_fake_loss + long_d_real_loss) / 2.0
-
-            total_d_loss = config['model']['loss_sp_discriminator_weight'] * (sp_d_loss) + \
-                            config['model']['loss_discriminator_weight'] * (short_d_loss + long_d_loss)
+            total_d_loss = config['model']['loss_discriminator_weight'] * lstm_d_loss
             total_d_loss.backward()
             discriminator_optimizer.step()
 
             generator_optimizer.zero_grad()
             
-            # Adversarial
-            ## Single pose generator
-            sp_g_fake_gan_out, sp_g_fake_q_discrete = single_pose_discriminator(sp_fake_input)
-            sp_g_fake_gan_score = sp_g_fake_gan_out[:, 0]
-            sp_g_fake_loss = torch.mean((sp_g_fake_gan_score - 1) ** 2)
+            # Adversarial Geneartor
+            lstm_discriminator.init_hidden(current_batch_size)
+            fake_lstm_gen_out = lstm_discriminator(single_pose_fake_input.permute(2,0,1))[-1]
+            g_fake_gan_out, g_fake_q_discete = lstm_extractor(fake_lstm_gen_out)
+            g_fake_gan_score = g_fake_gan_out[:, 0]
+            g_fake_loss = torch.mean((g_fake_gan_score - 1) **2)
 
-            fake_indices_expanded = fake_indices.unsqueeze(1).expand(fake_indices.shape[0], training_frames).reshape(sp_g_fake_q_discrete.shape[0])
-            sp_disc_code_loss = infogan_disc_loss(sp_g_fake_q_discrete, fake_indices_expanded)
-
-            short_g_fake_gan_out, short_fake_q_discrete = short_discriminator(fake_input)
-            short_g_score = torch.mean(short_g_fake_gan_out[:,0], dim=1)
-            short_g_loss = torch.mean((short_g_score -  1) ** 2)
-            short_disc_code_loss = infogan_disc_loss(short_fake_q_discrete, fake_indices)
-
-            long_g_fake_gan_out, long_fake_q_discrete = long_discriminator(fake_input)
-            long_g_score = torch.mean(long_g_fake_gan_out[:,0], dim=1)
-            long_g_loss = torch.mean((long_g_score -  1) ** 2)
-            long_disc_code_loss = infogan_disc_loss(long_fake_q_discrete, fake_indices)
+            disc_code_loss = infogan_disc_loss(g_fake_q_discete, fake_indices)
 
             total_g_loss =  config['model']['loss_pos_weight'] * loss_pos + \
                             config['model']['loss_quat_weight'] * loss_quat + \
                             config['model']['loss_root_weight'] * loss_root + \
                             config['model']['loss_contact_weight'] * loss_contact + \
-                            config['model']['loss_sp_generator_weight'] * sp_g_fake_loss + \
-                            config['model']['loss_mi_weight'] * (sp_disc_code_loss + short_disc_code_loss + long_disc_code_loss) + \
-                            config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
+                            config['model']['loss_generator_weight'] * g_fake_loss + \
+                            config['model']['loss_mi_weight'] * disc_code_loss
         
-            div_adv = torch.clamp(div_adv, max=0.3)
+            div_adv = torch.clamp(div_adv, max=0.1)
             loss_total = total_g_loss - div_adv
 
             # TOTAL LOSS
@@ -478,14 +439,9 @@ def train():
         summarywriter.add_scalar("LOSS/Root Loss", config['model']['loss_root_weight'] * loss_root, epoch + 1)
         summarywriter.add_scalar("LOSS/Contact Loss", config['model']['loss_contact_weight'] * loss_contact, epoch + 1)
 
-        summarywriter.add_scalar("LOSS/SP Discriminator", config['model']['loss_sp_discriminator_weight'] * (sp_d_loss), epoch + 1)
-        summarywriter.add_scalar("LOSS/ST Discriminator(Not Weighted)", short_d_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/LT Discriminator(Not Weighted)", long_d_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/Total Discriminator", total_d_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/SP Generator", config['model']['loss_sp_generator_weight'] * sp_g_fake_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/SP Code", config['model']['loss_mi_weight'] * sp_disc_code_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/ST Generator(Not Weighted)", short_g_loss, epoch + 1)
-        summarywriter.add_scalar("LOSS/LT Generator(Not Weighted)", long_g_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/LSTM Discriminator", config['model']['loss_discriminator_weight'] * lstm_d_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/LSTM Generator", config['model']['loss_generator_weight'] * g_fake_loss, epoch + 1)
+        summarywriter.add_scalar("LOSS/Discrete Code", config['model']['loss_mi_weight'] * disc_code_loss, epoch + 1)
         summarywriter.add_scalar("LOSS/Total Generator", loss_total, epoch + 1)
 
         summarywriter.add_scalar("Divergence Advantage", div_adv, epoch + 1)
@@ -499,8 +455,6 @@ def train():
             torch.save(offset_encoder.state_dict(), weight_path + '/offset_encoder.pkl')
             torch.save(lstm.state_dict(), weight_path + '/lstm.pkl')
             torch.save(decoder.state_dict(), weight_path + '/decoder.pkl')
-            torch.save(short_discriminator.state_dict(), weight_path + '/short_discriminator.pkl')
-            torch.save(long_discriminator.state_dict(), weight_path + '/long_discriminator.pkl')
             if config['model']['save_optimizer']:
                 torch.save(generator_optimizer.state_dict(), weight_path + '/generator_optimizer.pkl')
                 torch.save(discriminator_optimizer.state_dict(), weight_path + '/discriminator_optimizer.pkl')
