@@ -1,3 +1,4 @@
+project: 'RMIB-InfoGAN'
 data:
     data_dir: 'ubisoft-laforge-animation-dataset/output/BVH'
     data_loader_workers: 4
@@ -9,7 +10,7 @@ device:
 model:
     lstm_hidden: 1024
     batch_size: 128
-    epochs: 3000
+    total_epochs: 3000
     loss_sp_discriminator_weight: 1.0
     loss_mi_weight: 1.0
     loss_discriminator_weight: 0.1
@@ -25,7 +26,6 @@ model:
     
 log:
     weight_save_interval: 10
-
 test:
     num_gifs: 30
     plot: true
