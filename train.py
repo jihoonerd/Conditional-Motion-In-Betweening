@@ -338,44 +338,53 @@ def train():
             single_pose_fake_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_root, current_quaternion, current_contact], dim=1)
             single_pose_real_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_real_root, current_real_quaternion, current_real_contact], dim=1)
 
-            ## Adversarial Discriminator
-            discriminator_optimizer.zero_grad()
+            if epoch >= config['model']['gan_start_epoch']:
+                ## Adversarial Discriminator
+                discriminator_optimizer.zero_grad()
 
-            ## LSTM Discriminator
-            ### Score fake data (->0)
-            lstm_discriminator.init_hidden(current_batch_size)
-            fake_lstm_disc_out = lstm_discriminator(single_pose_fake_input.permute(2,0,1).detach())[-1]
-            d_fake_lstm_out = lstm_extractor(fake_lstm_disc_out)
-            d_fake_gan_out = n_discriminator(d_fake_lstm_out)
-            d_fake_gan_score = d_fake_gan_out[:, 0]
-            lstm_d_fake_loss = 0.5 * torch.mean((d_fake_gan_score) ** 2) * config['model']['loss_discriminator_weight']
-            lstm_d_fake_loss.backward()
+                ## LSTM Discriminator
+                ### Score fake data (->0)
+                lstm_discriminator.init_hidden(current_batch_size)
+                fake_lstm_disc_out = lstm_discriminator(single_pose_fake_input.permute(2,0,1).detach())[-1]
+                d_fake_lstm_out = lstm_extractor(fake_lstm_disc_out)
+                d_fake_gan_out = n_discriminator(d_fake_lstm_out)
+                d_fake_gan_score = d_fake_gan_out[:, 0]
+                lstm_d_fake_loss = 0.5 * torch.mean((d_fake_gan_score) ** 2) * config['model']['loss_discriminator_weight']
+                lstm_d_fake_loss.backward()
 
-            ### Score real data (->1)
-            lstm_discriminator.init_hidden(current_batch_size)
-            real_lstm_disc_out = lstm_discriminator(single_pose_real_input.permute(2,0,1))[-1]
-            d_real_lstm_out = lstm_extractor(real_lstm_disc_out)
-            d_real_gan_out = n_discriminator(d_real_lstm_out)
-            d_real_gan_score = d_real_gan_out[:, 0]
-            lstm_d_real_loss = 0.5 * torch.mean((d_real_gan_score - 1) ** 2) * config['model']['loss_discriminator_weight']
-            lstm_d_real_loss.backward()
+                ### Score real data (->1)
+                lstm_discriminator.init_hidden(current_batch_size)
+                real_lstm_disc_out = lstm_discriminator(single_pose_real_input.permute(2,0,1))[-1]
+                d_real_lstm_out = lstm_extractor(real_lstm_disc_out)
+                d_real_gan_out = n_discriminator(d_real_lstm_out)
+                d_real_gan_score = d_real_gan_out[:, 0]
+                lstm_d_real_loss = 0.5 * torch.mean((d_real_gan_score - 1) ** 2) * config['model']['loss_discriminator_weight']
+                lstm_d_real_loss.backward()
 
-            lstm_d_loss = (lstm_d_fake_loss + lstm_d_real_loss)
-            discriminator_optimizer.step()
+                lstm_d_loss = (lstm_d_fake_loss + lstm_d_real_loss)
+                discriminator_optimizer.step()
+            else:
+                lstm_d_loss = 0
 
-            generator_optimizer.zero_grad()
             
             # Adversarial Geneartor
-            ### Score fake data treated as real (->1)
-            lstm_discriminator.init_hidden(current_batch_size)
-            fake_lstm_gen_out = lstm_discriminator(single_pose_fake_input.permute(2,0,1))[-1]
-            g_fake_lstm_out = lstm_extractor(fake_lstm_gen_out)
-            g_fake_gan_out = n_discriminator(g_fake_lstm_out)
-            g_fake_gan_score = g_fake_gan_out[:, 0]
-            g_fake_loss = torch.mean((g_fake_gan_score - 1) **2)
+            generator_optimizer.zero_grad()
 
-            q_logit = q_discriminator(g_fake_lstm_out)
-            disc_code_loss = infogan_disc_loss(q_logit, fake_indices)
+            ### Score fake data treated as real (->1)
+            if epoch >= config['model']['gan_start_epoch']:
+                lstm_discriminator.init_hidden(current_batch_size)
+                fake_lstm_gen_out = lstm_discriminator(single_pose_fake_input.permute(2,0,1))[-1]
+                g_fake_lstm_out = lstm_extractor(fake_lstm_gen_out)
+                g_fake_gan_out = n_discriminator(g_fake_lstm_out)
+                g_fake_gan_score = g_fake_gan_out[:, 0]
+                g_fake_loss = torch.mean((g_fake_gan_score - 1) **2)
+
+                q_logit = q_discriminator(g_fake_lstm_out)
+                disc_code_loss = infogan_disc_loss(q_logit, fake_indices)
+            
+            else:
+                g_fake_loss = 0
+                disc_code_loss = 0
 
             total_g_loss =  config['model']['loss_pos_weight'] * loss_pos + \
                             config['model']['loss_quat_weight'] * loss_quat + \
