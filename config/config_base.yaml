@@ -2,10 +2,10 @@ data:
     data_dir: 'ubisoft-laforge-animation-dataset/output/BVH'
     data_loader_workers: 4
     skeleton_path: 'ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh'
-    saved_train: 'lafan_train_1.pkl'
+    saved_train: 'lafan_train.pkl'
 
 device:
-    gpu_id: 1
+    gpu_id: 0
 
 model:
     teacher_forcing: 0.0

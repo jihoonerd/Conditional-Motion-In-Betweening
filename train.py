@@ -73,8 +73,7 @@ def train():
 
     # Initializing networks
     state_in = root_v_dim + local_q_dim + contact_dim
-    infogan_in = state_in + ig_d_code_dim
-    state_encoder = InputEncoder(input_dim=infogan_in)
+    state_encoder = InputEncoder(input_dim=state_in)
     state_encoder.to(device)
 
     offset_in = root_v_dim + local_q_dim
