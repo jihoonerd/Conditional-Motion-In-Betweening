@@ -85,12 +85,12 @@ def train():
     target_encoder = InputEncoder(input_dim=target_in)
     target_encoder.to(device)
 
-    infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_code, out_dim=config['model']['lstm_hidden'])
+    lstm_hidden = config['model']['lstm_hidden']
+    infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_code, out_dim=lstm_hidden)
     infogan_code_encoder.to(device)
 
     # LSTM
     lstm_in = state_encoder.out_dim * 3
-    lstm_hidden = config['model']['lstm_hidden']
     lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
     lstm.to(device)
 
@@ -131,8 +131,6 @@ def train():
                                     betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
                                     amsgrad=True)
 
-    pdist = nn.PairwiseDistance(p=2)
-
     teacher_forcing = config['model']['teacher_forcing']
 
     for epoch in tqdm(range(config['model']['epochs']), position=0, desc="Epoch"):
@@ -143,12 +141,6 @@ def train():
 
         teacher_forcing *= config['model']['teacher_forcing_decay']
         teacher_forcing_prob = teacher_forcing
-
-        state_encoder.train()
-        offset_encoder.train()
-        target_encoder.train()
-        lstm.train()
-        decoder.train()
 
         batch_pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
         for sampled_batch in batch_pbar:
@@ -187,6 +179,7 @@ def train():
             infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=ig_d_code_dim, device=device)
             
             lstm.h[0] = infogan_code_encoder(infogan_code_gen.to(torch.float))
+            assert lstm.h[0].shape == (current_batch_size, lstm_hidden)
 
             # Generating Frames
             training_frames = torch.randint(low=lafan_dataset.start_seq_length, high=lafan_dataset.cur_seq_length + 1, size=(1,))[0]
