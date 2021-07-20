@@ -22,6 +22,22 @@ class InputEncoder(nn.Module):
         return x
 
 
+class InfoganCodeEncoder(nn.Module):
+    def __init__(self, input_dim, out_dim):
+        super().__init__()
+        self.input_dim = input_dim
+        self.out_dim = out_dim
+
+        self.fc1 = nn.Linear(input_dim, out_dim//2)
+        self.fc2 = nn.Linear(out_dim//2, out_dim)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = PLU(x)
+        x = self.fc2(x)
+        return x
+
+
 class LSTMNetwork(nn.Module):
     def __init__(self, input_dim=128, hidden_dim=256 * 3, num_layer=1, device="cpu"):
         super().__init__()

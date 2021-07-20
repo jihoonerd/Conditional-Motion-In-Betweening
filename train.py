@@ -19,8 +19,7 @@ from tqdm import tqdm
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh, generate_infogan_code
 from rmi.model.network import (Decoder, Discriminator, InputEncoder,
-                               LSTMNetwork, NDiscriminator, QDiscriminator)
-from rmi.model.noise_injector import noise_injector
+                               LSTMNetwork, NDiscriminator, QDiscriminator, InfoganCodeEncoder)
 from rmi.model.positional_encoding import PositionalEncoding
 
 
@@ -86,6 +85,9 @@ def train():
     target_encoder = InputEncoder(input_dim=target_in)
     target_encoder.to(device)
 
+    infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_code, out_dim=config['model']['lstm_hidden'])
+    infogan_code_encoder.to(device)
+
     # LSTM
     lstm_in = state_encoder.out_dim * 3
     lstm_hidden = config['model']['lstm_hidden']
@@ -116,7 +118,8 @@ def train():
                                       list(target_encoder.parameters()) +
                                       list(lstm.parameters()) +
                                       list(decoder.parameters()) + 
-                                      list(q_discriminator.parameters()),
+                                      list(q_discriminator.parameters()) +
+                                      list(infogan_code_encoder.parameters()),
                                 lr=config['model']['generator_learning_rate'],
                                 betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
                                 amsgrad=True)
@@ -183,14 +186,10 @@ def train():
             # InfoGAN code (per motion)
             infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=ig_d_code_dim, device=device)
             
+            lstm.h[0] = infogan_code_encoder(infogan_code_gen.to(torch.float))
+
             # Generating Frames
             training_frames = torch.randint(low=lafan_dataset.start_seq_length, high=lafan_dataset.cur_seq_length + 1, size=(1,))[0]
-
-            ## EXP
-            diverging_code_0 = torch.zeros_like(infogan_code_gen, device=device)
-            diverging_code_0[:, 0] = 1
-            diverging_code_1 = torch.zeros_like(infogan_code_gen, device=device)
-            diverging_code_1[:, 1] = 1
 
             local_q_pred_list = []
             local_q_cur_list = []
@@ -223,10 +222,7 @@ def train():
                 assert root_p_offset.shape == root_p_t.shape
 
                 # state input
-                vanilla_state_input = torch.cat([local_q_t, root_v_t, contact_t], -1)
-
-                # concatenate InfoGAN code
-                state_input = torch.cat([vanilla_state_input, infogan_code_gen], dim=1)
+                state_input = torch.cat([local_q_t, root_v_t, contact_t], -1)
 
                 # offset input
                 root_p_offset_t = root_p_offset - root_p_t
