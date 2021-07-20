@@ -70,67 +70,53 @@ class Decoder(nn.Module):
 
 
 class Discriminator(nn.Module):
-    # refer: 3.5 Motion discriminators, 3.7.2 sliding critics
-    def __init__(self, input_dim=128, hidden_dim=128, out_dim=1, length=3):
+    def __init__(self, input_dim, out_dim):
         super().__init__()
         self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
         self.out_dim = out_dim
-        self.length = length
 
-        self.fc1 = nn.Conv1d(
-            self.input_dim, self.hidden_dim, kernel_size=self.length, bias=True
-        )
-        self.fc2 = nn.Conv1d(
-            self.hidden_dim, self.hidden_dim // 2, kernel_size=1, bias=True
-        )
-        self.fc3 = nn.Conv1d(self.hidden_dim // 2, out_dim, kernel_size=1, bias=True)
-
-        self.relu = nn.ReLU()
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        x = self.relu(x)
-        x = self.fc3(x)
-        return x
-
-class InfoDiscriminator(nn.Module):
-    def __init__(self, input_dim, discrete_code_dim):
-        super().__init__()
-        self.input_dim = input_dim
-        self.discrete_code_dim =  discrete_code_dim
-
-        self.single_pose_disc = nn.Sequential(
+        self.disc_block = nn.Sequential(
             nn.Linear(self.input_dim, 256),
             nn.ReLU(),
             nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(256, 256),
+            nn.Linear(256, self.out_dim),
         )
 
+    def forward(self, x):
+        x = self.disc_block(x)
+        return x
+
+class NDiscriminator(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.input_dim = input_dim
+
         self.regular_gan = nn.Sequential(
-            nn.Linear(256, 128),
+            nn.Linear(self.input_dim, 256),
+            nn.LeakyReLU(0.1),
+            nn.Linear(256, 1)
+        )
+        self.sigmoid = nn.Sigmoid()
+    
+    def forward(self, x):
+        x = self.sigmoid(self.regular_gan(x))
+        return x
+
+class QDiscriminator(nn.Module):
+    def __init__(self, input_dim, discrete_code_dim):
+        super().__init__()
+        self.input_dim = input_dim
+        self.discrete_code_dim = discrete_code_dim
+
+        self.infogan_q = nn.Sequential(
+            nn.Linear(self.input_dim, 128),
             nn.LeakyReLU(0.1),
             nn.Linear(128, 128),
             nn.LeakyReLU(0.1),
-            nn.Linear(128, 1)
+            nn.Linear(128, self.discrete_code_dim)
         )
-
-        self.infogan_q = nn.Sequential(
-            nn.Linear(256, 128),
-            nn.LeakyReLU(0.1),
-            nn.Linear(128, 64),
-            nn.LeakyReLU(0.1),
-            nn.Linear(64, self.discrete_code_dim)
-        )
-
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        discriminator_out = self.single_pose_disc(x)
-        regular_gan_out = self.sigmoid(self.regular_gan(discriminator_out))
-
-        q_out = self.infogan_q(discriminator_out)
-        return regular_gan_out, q_out
+        q = self.infogan_q(x)
+        return q
