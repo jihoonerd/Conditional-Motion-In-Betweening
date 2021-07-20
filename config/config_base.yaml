@@ -10,6 +10,7 @@ device:
 model:
     teacher_forcing: 0.0
     teacher_forcing_decay: 0.95
+    gan_start_epoch: 40
     lstm_hidden: 1024
     batch_size: 64
     epochs: 3000
