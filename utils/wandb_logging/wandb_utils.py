@@ -9,7 +9,7 @@ import yaml
 from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).parent.parent.parent))  # add utils/ to path
-from utils.general import colorstr, check_dataset, check_file
+from utils.general import colorstr, check_file
 
 try:
     import wandb
