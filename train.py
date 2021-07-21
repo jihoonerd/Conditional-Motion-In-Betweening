@@ -52,7 +52,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     # Hyperparameters
     if isinstance(hyp, str):
         with open(hyp) as f:
-            hyp = yaml.safe_load(f)  # load hyps dict
+            hyp = yaml.safe_load(f)# load hyps dict
     LOGGER.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
 
     # Save run settings
@@ -91,7 +91,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     wandb_logger = WandbLogger(opt, save_dir.stem, run_id)
     loggers['wandb'] = wandb_logger.wandb
     if loggers['wandb']:
-        weights, epochs, hyp = opt.weights, opt.epochs, opt.hyp  # may update weights, epochs if resuming
+        weights, epochs, hyp = opt.weights, opt.epochs, hyp  # may update weights, epochs if resuming
 
 
     # Load Skeleton
@@ -102,6 +102,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     flip_bvh(data_path)
 
     # Load LAFAN Dataset
+    Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
     lafan_dataset = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=batch_size, shuffle=True, num_workers=opt.data_loader_workers)
 
@@ -131,7 +132,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
         # LSTM
         lstm_in = state_encoder.out_dim * 3
-        lstm_hidden = opt.lstm_hidden
+        print('lstm_hidden', hyp['lstm_hidden'], type(hyp['lstm_hidden']))
+        lstm_hidden = int(hyp['lstm_hidden'])
         lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
         lstm.to(device)
 
@@ -205,7 +207,9 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
         # LSTM
         lstm_in = state_encoder.out_dim * 3
-        lstm_hidden = opt.lstm_hidden        
+        print(hyp)
+        print('lstm_hidden', hyp['lstm_hidden'], type(hyp['lstm_hidden']))
+        lstm_hidden = int(hyp['lstm_hidden'])        
         lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
         lstm.to(device)
 
@@ -319,11 +323,12 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         lstm.train()
         decoder.train()
 
-        pbar = enumerate(lafan_data_loader)
-        pbar = tqdm(pbar, total=len(lafan_data_loader))
+        #pbar = enumerate(lafan_data_loader)
+        #pbar = tqdm(pbar, total=len(lafan_data_loader))
+        
+        pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
         generator_optimizer.zero_grad()
         discriminator_optimizer.zero_grad()
-
         for sampled_batch in pbar: #batch
             div_adv = 0
 
@@ -608,7 +613,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 div_adv = torch.clamp(div_adv, max=0.3)
                 loss_total = total_g_loss - div_adv            
             scaler.scale(total_d_loss).backward()
-            scaler.unscale(discriminator_optimizer)
+            scaler.unscale_(discriminator_optimizer)
 
             scaler.step(discriminator_optimizer)
 
@@ -617,7 +622,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             scaler.scale(loss_total).backward()
 
             # Gradient clipping for training stability
-            scaler.unscale(generator_optimizer)
+            scaler.unscale_(generator_optimizer)
             torch.nn.utils.clip_grad_norm_(state_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(offset_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(target_encoder.parameters(), 1.0)
@@ -672,7 +677,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', type=str, default='RMIB-InfoGAN.pt', help='initial weights path')
+    parser.add_argument('--weights', type=str, default='', help='initial weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='dataset path')
 
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='dataset path')
@@ -680,6 +685,7 @@ def parse_opt(known=False):
     parser.add_argument('--hyp', type=str, default='config/hyp.scratch.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
+    parser.add_argument('--data_loader_workers', type=int, default=4, help='data_loader_workers')
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
     parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
     parser.add_argument('--noval', action='store_true', help='only validate final epoch')
