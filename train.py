@@ -4,7 +4,8 @@ import shutil
 from datetime import datetime
 import logging 
 from copy import deepcopy
-
+import sys
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -27,15 +28,45 @@ from rmi.model.positional_encoding import PositionalEncoding
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 from utils.torch_utils import select_device, intersect_dicts, de_parallel
 from utils.general import colorstr
+
+FILE = Path(__file__).absolute()
+sys.path.append(FILE.parents[0].as_posix())  # add yolov5/ to path
+
 LOGGER = logging.getLogger(__name__)
 
-def train():
+def train(hyp,  # path/to/hyp.yaml or hyp dictionary
+          opt,
+          device,
+          ):
+    save_dir, epochs, batch_size, weights, evolve, data, cfg, resume = \
+        opt.save_dir, opt.epochs, opt.batch_size, opt.weights, opt.evolve, opt.data, opt.cfg, opt.resume
+
+    # Directories
+    save_dir = Path(save_dir)
+    wdir = save_dir / 'weights'
+    wdir.mkdir(parents=True, exist_ok=True)  # make dir
+    last = wdir / 'last.pt'
+    results_file = save_dir / 'results.txt'
+
+
     # Load configuration and hyperparameter setting from yaml
-    config = yaml.safe_load(open('./config/config_base.yaml', 'r').read())    
-    hyp = config['model']
+    # config = yaml.safe_load(open('./config/config_base.yaml', 'r').read())    
+    # hyp = config['model']
+
+    # Hyperparameters
+    if isinstance(hyp, str):
+        with open(hyp) as f:
+            hyp = yaml.safe_load(f)  # load hyps dict
     LOGGER.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
-    project = config['project']
-    save_interval = config['log']['weight_save_interval']
+
+
+    # Save run settings
+    with open(save_dir / 'hyp.yaml', 'w') as f:
+        yaml.safe_dump(hyp, f, sort_keys=False)
+    with open(save_dir / 'opt.yaml', 'w') as f:
+        yaml.safe_dump(vars(opt), f, sort_keys=False)
+
+
     # Set device to use
     # TODO: Support Multi GPU
     gpu_id = config['device']['gpu_id']
@@ -44,13 +75,16 @@ def train():
     total_epochs = config['model']['total_epochs']
     # Set number of InfoGAN Code
     infogan_code = config['model']['infogan_code']
+    
+    with open(data) as f:
+        data_dict = yaml.safe_load(f)  # data dict
 
     # Prepare Directory    
     time_stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     model_path = os.path.join('model_weights', time_stamp)
     pathlib.Path(model_path).mkdir(parents=True, exist_ok=True)
     shutil.copyfile('./config/config_base.yaml', os.path.join(model_path, 'exp_config.yaml'))
-
+    weights = 'RMIB-InfoGAN.pt'
     state_encoder_path = model_path + '/state_encoder.pt'
     target_encoder_path = model_path + '/target_encoder.pt'
     offset_encoder_path = model_path + '/offset_encoder.pt'
@@ -66,17 +100,20 @@ def train():
     loggers = {'wandb': None, 'tb': None}  # loggers dict
 
     prefix = colorstr('tensorboard: ')
-    LOGGER.info(f"{prefix}Start with 'tensorboard --logdir {project}', view at http://localhost:6006/")
-    loggers['tb'] = SummaryWriter(log_dir=tb_path)
+    LOGGER.info(f"{prefix}Start with 'tensorboard --logdir {opt.project}', view at http://localhost:6006/")
+    
+    tb_path = os.path.join('tensorboard', time_stamp)
+    loggers['tb'] = SummaryWriter(str(save_dir))
 
     # # Prepare Tensorboard
     # tb_path = os.path.join('tensorboard', time_stamp)
     # pathlib.Path(tb_path).mkdir(parents=True, exist_ok=True)
     # summarywriter = SummaryWriter(log_dir=tb_path)
     # W&B
+    opt.hyp = hyp # add hyperparameters
     run_id = torch.load(model_path).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(weights) else None
     run_id = run_id if resume else None  # start fresh run if transfer learning
-    wandb_logger = WandbLogger(opt, model_path.stem, run_id, data_dict)
+    wandb_logger = WandbLogger(opt, save_dir.stem, run_id, data_dict)
     loggers['wandb'] = wandb_logger.wandb
     if loggers['wandb']:
         data_dict = wandb_logger.data_dict
@@ -150,6 +187,8 @@ def train():
         short_discriminator.to(device)
         long_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code, length=5)
         long_discriminator.to(device)
+
+        exclude = []
         #Load to FP32
         state_dict_state_encoder = ckpt_state_encoder['model'].float().state_dict()  
         state_dict_state_encoder = intersect_dicts(state_dict_state_encoder, state_encoder.state_dict(), exclude=exclude)  
@@ -183,10 +222,6 @@ def train():
         state_dict_decoder = intersect_dicts(state_dict_decoder, decoder.state_dict(), exclude=exclude)  
         decoder.load_state_dict(state_dict_decoder, strict=False)  
 
-
-        #exclude 
-        exclude = []
-        
         # LOGGER.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
     else : 
         state_encoder = InputEncoder(input_dim=infogan_in)
@@ -272,28 +307,28 @@ def train():
                                       list(target_encoder.parameters()) +
                                       list(lstm.parameters()) +
                                       list(decoder.parameters()),
-                                lr=config['model']['learning_rate'],
-                                betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
+                                lr=hyp['lr_g'],
+                                betas=(hyp['optim_beta1'], hyp['optim_beta2']),
                                 amsgrad=True)
 
     discriminator_optimizer = Adam(params=list(single_pose_discriminator.parameters()) + 
                                           list(short_discriminator.parameters()) +
                                           list(long_discriminator.parameters()),
-                                    lr=config['model']['learning_rate'],
-                                    betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
+                                    lr=hyp['lr_d'],
+                                    betas=(hyp['optim_beta1'], hyp['optim_beta2']),
                                     amsgrad=True)
 
     pdist = nn.PairwiseDistance(p=2)
 
     start_epoch = 0
     if pretrained:
-        start_epoch = ckpt['epoch'] + 1
+        start_epoch = ckpt_state_encoder['epoch'] + 1
         if resume:
             assert start_epoch > 0, '%s training to %g epochs is finished, nothing to resume.' % (weights, epochs)
         if epochs < start_epoch:
             LOGGER.info('%s has been trained for %g epochs. Fine-tuning for %g additional epochs.' %
-                        (weights, ckpt['epoch'], epochs))
-            epochs += ckpt['epoch']  # finetune additional epochs
+                        (weights, ckpt_state_encoder['epoch'], epochs))
+            epochs += ckpt_state_encoder['epoch']  # finetune additional epochs
 
     t0 = time.time()
     scaler = amp.GradScaler(enabled=cuda)
@@ -574,8 +609,8 @@ def train():
 
                 long_d_loss = (long_d_fake_loss + long_d_real_loss) / 2.0
 
-                total_d_loss = config['model']['loss_sp_discriminator_weight'] * (sp_d_loss) + \
-                                config['model']['loss_discriminator_weight'] * (short_d_loss + long_d_loss)
+                total_d_loss = hyp['loss_sp_discriminator_weight'] * (sp_d_loss) + \
+                                hyp['loss_discriminator_weight'] * (short_d_loss + long_d_loss)
              
                 # Adversarial
                 ## Single pose generator
@@ -594,9 +629,9 @@ def train():
                 long_g_score = torch.mean(long_g_fake_gan_out[:,0], dim=1)
                 long_g_loss = torch.mean((long_g_score -  1) ** 2)
 
-                total_g_loss = config['model']['loss_sp_generator_weight'] * sp_g_fake_loss + \
-                            config['model']['loss_mi_weight'] * sp_disc_code_loss + \
-                            config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
+                total_g_loss = hyp['loss_sp_generator_weight'] * sp_g_fake_loss + \
+                            hyp['loss_mi_weight'] * sp_disc_code_loss + \
+                            hyp['loss_generator_weight'] * (short_g_loss + long_g_loss)
                 div_adv = torch.clamp(div_adv, max=0.3)
                 loss_total = total_g_loss - div_adv            
             scaler.scale(total_d_loss).backward()
@@ -671,5 +706,46 @@ def train():
     LOGGER.info(f'{epoch - start_epoch + 1} epochs completed in {(time.time() - t0) / 3600:.3f} hours.\n')
     wandb_logger.finish_run()
     torch.cuda.empty_cache()
+
+
+def parse_opt(known=False):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--weights', type=str, default='yolov5s.pt', help='initial weights path')
+    parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
+    parser.add_argument('--data', type=str, default='data/coco128.yaml', help='dataset.yaml path')
+    parser.add_argument('--hyp', type=str, default='data/hyps/hyp.scratch.yaml', help='hyperparameters path')
+    parser.add_argument('--epochs', type=int, default=300)
+    parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
+    parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='train, val image size (pixels)')
+    parser.add_argument('--rect', action='store_true', help='rectangular training')
+    parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
+    parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
+    parser.add_argument('--noval', action='store_true', help='only validate final epoch')
+    parser.add_argument('--noautoanchor', action='store_true', help='disable autoanchor check')
+    parser.add_argument('--evolve', type=int, nargs='?', const=300, help='evolve hyperparameters for x generations')
+    parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
+    parser.add_argument('--cache-images', action='store_true', help='cache images for faster training')
+    parser.add_argument('--image-weights', action='store_true', help='use weighted image selection for training')
+    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--multi-scale', action='store_true', help='vary img-size +/- 50%%')
+    parser.add_argument('--single-cls', action='store_true', help='train multi-class data as single-class')
+    parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
+    parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
+    parser.add_argument('--workers', type=int, default=8, help='maximum number of dataloader workers')
+    parser.add_argument('--project', default='runs/train', help='save to project/name')
+    parser.add_argument('--entity', default=None, help='W&B entity')
+    parser.add_argument('--name', default='exp', help='save to project/name')
+    parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
+    parser.add_argument('--quad', action='store_true', help='quad dataloader')
+    parser.add_argument('--linear-lr', action='store_true', help='linear LR')
+    parser.add_argument('--label-smoothing', type=float, default=0.0, help='Label smoothing epsilon')
+    parser.add_argument('--upload_dataset', action='store_true', help='Upload dataset as W&B artifact table')
+    parser.add_argument('--bbox_interval', type=int, default=-1, help='Set bounding-box image logging interval for W&B')
+    parser.add_argument('--save_period', type=int, default=-1, help='Log model after every "save_period" epoch')
+    parser.add_argument('--artifact_alias', type=str, default="latest", help='version of dataset artifact to be used')
+    parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
+    opt = parser.parse_known_args()[0] if known else parser.parse_args()
+    return opt
+
 if __name__ == '__main__':
     train()
