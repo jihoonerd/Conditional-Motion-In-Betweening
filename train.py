@@ -67,8 +67,6 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
     # Set device to use
     # TODO: Support Multi GPU
-    gpu_id = opt.gpu_id
-    device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
     cuda = device.type != 'cpu'
     epochs = opt.epochs
 
@@ -676,6 +674,7 @@ def parse_opt(known=False):
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='RMIB-InfoGAN.pt', help='initial weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='dataset path')
+    parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='dataset path')
     parser.add_argument('--hyp', type=str, default='config/hyp.scratch.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')

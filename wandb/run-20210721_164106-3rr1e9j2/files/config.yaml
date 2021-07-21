@@ -1,0 +1,73 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.10.12
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    python_version: 3.7.3
+batch_size:
+  desc: null
+  value: 16
+data_path:
+  desc: null
+  value: ubisoft-laforge-animation-dataset/output/BVH
+device:
+  desc: null
+  value: ''
+entity:
+  desc: null
+  value: null
+epochs:
+  desc: null
+  value: 300
+exist_ok:
+  desc: null
+  value: false
+exp_name:
+  desc: null
+  value: exp
+hyp:
+  desc: null
+  value: config/hyp.scratch.yaml
+nosave:
+  desc: null
+  value: false
+noval:
+  desc: null
+  value: false
+opt:
+  desc: null
+  value:
+    batch_size: 16
+    data_path: ubisoft-laforge-animation-dataset/output/BVH
+    device: ''
+    entity: null
+    epochs: 300
+    exist_ok: false
+    exp_name: exp
+    hyp: config/hyp.scratch.yaml
+    nosave: false
+    noval: false
+    project: runs/train
+    resume: false
+    save_dir: runs/train/exp3
+    save_interval: -1
+    weights: RMIB-InfoGAN.pt
+project:
+  desc: null
+  value: runs/train
+resume:
+  desc: null
+  value: false
+save_dir:
+  desc: null
+  value: runs/train/exp3
+save_interval:
+  desc: null
+  value: -1
+weights:
+  desc: null
+  value: RMIB-InfoGAN.pt
