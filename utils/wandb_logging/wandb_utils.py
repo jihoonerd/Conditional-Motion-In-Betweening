@@ -127,14 +127,13 @@ class WandbLogger():
             prefix = colorstr('wandb: ')
             print(f"{prefix}Install Weights & Biases for RMIB-InfoGAN logging with 'pip install wandb' (recommended)")
 
-    def setup_training(self, opt):\
+    def setup_training(self, opt):
         self.log_dict, self.current_epoch = {}, 0
         if isinstance(opt.resume, str):
             modeldir, _ = self.download_model_artifact(opt)
             if modeldir:
                 self.weights = Path(modeldir) / "last.pt"
                 config = self.wandb_run.config
-
                 opt.weights, opt.save_interval, opt.batch_size, opt.epochs, opt.hyp = str(
                     self.weights), config.save_interval, config.batch_size, config.epochs, config.opt['hyp']
         
