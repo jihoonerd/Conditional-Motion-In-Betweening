@@ -674,7 +674,8 @@ def parse_opt(known=False):
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='RMIB-InfoGAN.pt', help='initial weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='dataset path')
-    parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='dataset path')
+
+    parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='dataset path')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data/', help='dataset path')
     parser.add_argument('--hyp', type=str, default='config/hyp.scratch.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)

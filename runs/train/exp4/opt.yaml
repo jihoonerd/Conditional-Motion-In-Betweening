@@ -1,0 +1,16 @@
+weights: RMIB-InfoGAN.pt
+data_path: ubisoft-laforge-animation-dataset/output/BVH
+skeleton_path: ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh
+hyp: config/hyp.scratch.yaml
+epochs: 300
+batch_size: 16
+resume: false
+nosave: false
+noval: false
+device: ''
+project: runs/train
+entity: null
+exp_name: exp
+exist_ok: false
+save_interval: -1
+save_dir: runs/train/exp4
