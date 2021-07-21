@@ -1,10 +1,12 @@
 import os
-import pathlib
+from pathlib import Path
 import shutil
 from datetime import datetime
+import time
 import logging 
 from copy import deepcopy
-
+import sys
+import argparse
 
 import numpy as np
 import torch
@@ -26,73 +28,81 @@ from rmi.model.positional_encoding import PositionalEncoding
 
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 from utils.torch_utils import select_device, intersect_dicts, de_parallel
-from utils.general import colorstr
+from utils.general import colorstr, get_latest_run, increment_path, check_file
+
+FILE = Path(__file__).absolute()
+sys.path.append(FILE.parents[0].as_posix())  # add yolov5/ to path
+
 LOGGER = logging.getLogger(__name__)
 
-def train():
-    # Load configuration and hyperparameter setting from yaml
-    config = yaml.safe_load(open('./config/config_base.yaml', 'r').read())    
-    hyp = config['model']
+def train(hyp,  # path/to/hyp.yaml or hyp dictionary
+          opt,
+          device,
+          ):
+    save_dir, epochs, batch_size, weights, data_path, resume, noval, nosave, = \
+        opt.save_dir, opt.epochs, opt.batch_size, opt.weights, opt.data_path, \
+        opt.resume, opt.noval, opt.nosave
+
+    # Directories
+    save_dir = Path(save_dir)
+    wdir = save_dir / 'weights'
+    wdir.mkdir(parents=True, exist_ok=True)  # make dir
+    last = wdir / 'last.pt'
+
+    # Hyperparameters
+    if isinstance(hyp, str):
+        with open(hyp) as f:
+            hyp = yaml.safe_load(f)  # load hyps dict
     LOGGER.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
-    project = config['project']
-    save_interval = config['log']['weight_save_interval']
+
+    # Save run settings
+    with open(save_dir / 'hyp.yaml', 'w') as f:
+        yaml.safe_dump(hyp, f, sort_keys=False)
+    with open(save_dir / 'opt.yaml', 'w') as f:
+        yaml.safe_dump(vars(opt), f, sort_keys=False)
+
+    project = opt.project
+    save_interval = opt.save_interval
     # Set device to use
     # TODO: Support Multi GPU
-    gpu_id = config['device']['gpu_id']
+    gpu_id = opt.gpu_id
     device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
     cuda = device.type != 'cpu'
-    total_epochs = config['model']['total_epochs']
+    epochs = opt.epochs
+
     # Set number of InfoGAN Code
-    infogan_code = config['model']['infogan_code']
-
-    # Prepare Directory    
-    time_stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    model_path = os.path.join('model_weights', time_stamp)
-    pathlib.Path(model_path).mkdir(parents=True, exist_ok=True)
-    shutil.copyfile('./config/config_base.yaml', os.path.join(model_path, 'exp_config.yaml'))
-
-    state_encoder_path = model_path + '/state_encoder.pt'
-    target_encoder_path = model_path + '/target_encoder.pt'
-    offset_encoder_path = model_path + '/offset_encoder.pt'
-    lstm_path = model_path + '/lstm.pt'
-    decoder_path = model_path + '/decoder.pt'
-    short_discriminator_path = model_path + '/short_discriminator.pt'
-    long_discriminator_path = model_path +  '/long_discriminator.pt'
-    single_pose_discriminator_path = model_path + '/single_pose_discriminator.pt'
-    generator_optimizer_path = model_path + '/generator_optimizer.pt'
-    discriminator_optimizer_path = model_path + '/discriminator_optimizer.pt'
+    infogan_code = opt.infogan_code
 
     # Loggers
     loggers = {'wandb': None, 'tb': None}  # loggers dict
 
     prefix = colorstr('tensorboard: ')
-    LOGGER.info(f"{prefix}Start with 'tensorboard --logdir {project}', view at http://localhost:6006/")
-    loggers['tb'] = SummaryWriter(log_dir=tb_path)
+    LOGGER.info(f"{prefix}Start with 'tensorboard --logdir {opt.project}', view at http://localhost:6006/")
+    loggers['tb'] = SummaryWriter(str(save_dir))
 
     # # Prepare Tensorboard
     # tb_path = os.path.join('tensorboard', time_stamp)
     # pathlib.Path(tb_path).mkdir(parents=True, exist_ok=True)
     # summarywriter = SummaryWriter(log_dir=tb_path)
     # W&B
-    run_id = torch.load(model_path).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(weights) else None
+    run_id = torch.load(weights).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(weights) else None
     run_id = run_id if resume else None  # start fresh run if transfer learning
-    wandb_logger = WandbLogger(opt, model_path.stem, run_id, data_dict)
+    wandb_logger = WandbLogger(opt, save_dir.stem, run_id)
     loggers['wandb'] = wandb_logger.wandb
     if loggers['wandb']:
-        data_dict = wandb_logger.data_dict
         weights, epochs, hyp = opt.weights, opt.epochs, opt.hyp  # may update weights, epochs if resuming
 
 
     # Load Skeleton
-    parsed = BVHParser().parse(config['data']['skeleton_path']) # Use first bvh info as a reference skeleton.
+    parsed = BVHParser().parse(opt.skeleton_path) # Use first bvh info as a reference skeleton.
     skeleton = TorchSkeleton(skeleton=parsed.skeleton, root_name='Hips', device=device)
 
     # Flip, Load and preprocess data. It utilizes LAFAN1 utilities
-    flip_bvh(config['data']['data_dir'])
+    flip_bvh(data_path)
 
     # Load LAFAN Dataset
-    lafan_dataset = LAFAN1Dataset(lafan_path=config['data']['data_dir'], train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
-    lafan_data_loader = DataLoader(lafan_dataset, batch_size=config['model']['batch_size'], shuffle=True, num_workers=config['data']['data_loader_workers'])
+    lafan_dataset = LAFAN1Dataset(lafan_path=data_path, train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_data_loader = DataLoader(lafan_dataset, batch_size=batch_size, shuffle=True, num_workers=opt.data_loader_workers)
 
     # Extract dimension from processed data
     root_v_dim = lafan_dataset.root_v_dim
@@ -100,31 +110,14 @@ def train():
     contact_dim = lafan_dataset.contact_dim
     ig_d_code_dim = infogan_code
 
-    # Initializing networks
-    state_in = root_v_dim + local_q_dim + contact_dim
-    infogan_in = state_in + ig_d_code_dim
-    offset_in = root_v_dim + local_q_dim
-    target_in = local_q_dim
-
-    # LSTM
-    lstm_in = state_encoder.out_dim * 3
-    lstm_hidden = config['model']['lstm_hidden']
-
-
-    discriminator_in = lafan_dataset.num_joints * 3 * 2 # See Appendix
-    sp_discriminator_in = 372
-
     pretrained = weights.endswith('.pt')
     if pretrained:
-        ckpt_state_encoder = torch.load(weights_state_encoder)
-        ckpt_target_encoder = torch.load(weights_target_encoder)
-        ckpt_offset_encoder = torch.load(weights_offset_encoder)
-        ckpt_lstm = torch.load(weights_lstm)
-        ckpt_decoder = torch.load(weights_decoder)
-        ckpt_short_discriminator = torch.load(weights_short_discriminator)
-        ckpt_long_discriminator = torch.load(weights_long_discriminator)
-        ckpt_single_pose_discriminator = torch.load(weights_single_pose_discriminator)
-
+        ckpt = torch.load(weights)
+        # Initializing networks
+        state_in = root_v_dim + local_q_dim + contact_dim
+        infogan_in = state_in + ig_d_code_dim
+        offset_in = root_v_dim + local_q_dim
+        target_in = local_q_dim
         state_encoder = InputEncoder(input_dim=infogan_in)
         state_encoder.to(device)
 
@@ -136,6 +129,8 @@ def train():
         target_encoder.to(device)
 
         # LSTM
+        lstm_in = state_encoder.out_dim * 3
+        lstm_hidden = opt.lstm_hidden
         lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
         lstm.to(device)
 
@@ -144,51 +139,59 @@ def train():
         decoder.to(device)
 
         # Discriminator
+        discriminator_in = lafan_dataset.num_joints * 3 * 2 # See Appendix
+        sp_discriminator_in = 372
         single_pose_discriminator = SinglePoseDiscriminator(input_dim=sp_discriminator_in, discrete_code_dim=infogan_code)
         single_pose_discriminator.to(device)
         short_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code, length=2)
         short_discriminator.to(device)
         long_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code, length=5)
         long_discriminator.to(device)
-        #Load to FP32
-        state_dict_state_encoder = ckpt_state_encoder['model'].float().state_dict()  
-        state_dict_state_encoder = intersect_dicts(state_dict_state_encoder, state_encoder.state_dict(), exclude=exclude)  
-        state_encoder.load_state_dict(state_dict_state_encoder, strict=False)  
-
-        state_dict_target_encoder = ckpt_target_encoder['model'].float().state_dict()  
-        state_dict_target_encoder = intersect_dicts(state_dict_target_encoder, target_encoder.state_dict(), exclude=exclude)  
-        target_encoder.load_state_dict(state_dict_target_encoder, strict=False)  
         
-        state_dict_offset_encoder = ckpt_offset_encoder['model'].float().state_dict() 
-        state_dict_offset_encoder = intersect_dicts(state_dict_offset_encoder, offset_encoder.state_dict(), exclude=exclude)  
-        offset_encoder.load_state_dict(state_dict_offset_encoder, strict=False)  
-        
-        state_dict_lstm = ckpt_lstm['model'].float().state_dict()  
-        state_dict_lstm = intersect_dicts(state_dict_lstm, lstm.state_dict(), exclude=exclude)  
-        lstm.load_state_dict(state_dict_lstm, strict=False)  
-
-        state_dict_decoder = ckpt_decoder['model'].float().state_dict()  
-        state_dict_decoder = intersect_dicts(state_dict_decoder, decoder.state_dict(), exclude=exclude)  
-        decoder.load_state_dict(state_dict_decoder, strict=False)  
-        
-        state_dict_single_pose_discriminator = ckpt_single_pose_discriminator['model'].float().state_dict()
-        state_dict_single_pose_discriminator = intersect_dicts(state_dict_single_pose_discriminator, single_pose_discriminator.state_dict(), exclude=exclude)
-        single_pose_discriminator.load_state_dict(state_dict_single_pose_discriminator, strict=False)
-
-        state_dict_short_discriminator = ckpt_short_discriminator['model'].float().state_dict()  
-        state_dict_short_discriminator = intersect_dicts(state_dict_short_discriminator, short_discriminator.state_dict(), exclude=exclude)  
-        short_discriminator.load_state_dict(state_dict_short_discriminator, strict=False)  
-
-        state_dict_decoder = ckpt_decoder['model'].float().state_dict()  
-        state_dict_decoder = intersect_dicts(state_dict_decoder, decoder.state_dict(), exclude=exclude)  
-        decoder.load_state_dict(state_dict_decoder, strict=False)  
-
-
         #exclude 
         exclude = []
         
+        #Load to FP32
+        state_dict_state_encoder = ckpt['state_encoder'].float().state_dict()  
+        state_dict_state_encoder = intersect_dicts(state_dict_state_encoder, state_encoder.state_dict(), exclude=exclude)  
+        state_encoder.load_state_dict(state_dict_state_encoder, strict=False)  
+
+        state_dict_target_encoder = ckpt['target_encoder'].float().state_dict()  
+        state_dict_target_encoder = intersect_dicts(state_dict_target_encoder, target_encoder.state_dict(), exclude=exclude)  
+        target_encoder.load_state_dict(state_dict_target_encoder, strict=False)  
+        
+        state_dict_offset_encoder = ckpt['offset_encoder'].float().state_dict() 
+        state_dict_offset_encoder = intersect_dicts(state_dict_offset_encoder, offset_encoder.state_dict(), exclude=exclude)  
+        offset_encoder.load_state_dict(state_dict_offset_encoder, strict=False)  
+        
+        state_dict_lstm = ckpt['lstm'].float().state_dict()  
+        state_dict_lstm = intersect_dicts(state_dict_lstm, lstm.state_dict(), exclude=exclude)  
+        lstm.load_state_dict(state_dict_lstm, strict=False)  
+
+        state_dict_decoder = ckpt['decoder'].float().state_dict()  
+        state_dict_decoder = intersect_dicts(state_dict_decoder, decoder.state_dict(), exclude=exclude)  
+        decoder.load_state_dict(state_dict_decoder, strict=False)  
+        
+        state_dict_single_pose_discriminator = ckpt['single_pose_dicriminator'].float().state_dict()
+        state_dict_single_pose_discriminator = intersect_dicts(state_dict_single_pose_discriminator, single_pose_discriminator.state_dict(), exclude=exclude)
+        single_pose_discriminator.load_state_dict(state_dict_single_pose_discriminator, strict=False)
+
+        state_dict_short_discriminator = ckpt['short_discriminator'].float().state_dict()  
+        state_dict_short_discriminator = intersect_dicts(state_dict_short_discriminator, short_discriminator.state_dict(), exclude=exclude)  
+        short_discriminator.load_state_dict(state_dict_short_discriminator, strict=False)  
+
+        state_dict_long_discriminator = ckpt['long_discriminator'].float().state_dict()  
+        state_dict_long_discriminator = intersect_dicts(state_dict_long_discriminator, long_discriminator.state_dict(), exclude=exclude)  
+        long_discriminator.load_state_dict(state_dict_long_discriminator, strict=False)  
+
         # LOGGER.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
     else : 
+        # Initializing networks
+        state_in = root_v_dim + local_q_dim + contact_dim
+        infogan_in = state_in + ig_d_code_dim
+        offset_in = root_v_dim + local_q_dim
+        target_in = local_q_dim
+                
         state_encoder = InputEncoder(input_dim=infogan_in)
         state_encoder.to(device)
 
@@ -200,6 +203,8 @@ def train():
         target_encoder.to(device)
 
         # LSTM
+        lstm_in = state_encoder.out_dim * 3
+        lstm_hidden = opt.lstm_hidden        
         lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
         lstm.to(device)
 
@@ -208,6 +213,8 @@ def train():
         decoder.to(device)
 
         # Discriminator
+        discriminator_in = lafan_dataset.num_joints * 3 * 2 # See Appendix
+        sp_discriminator_in = 372
         single_pose_discriminator = SinglePoseDiscriminator(input_dim=sp_discriminator_in, discrete_code_dim=infogan_code)
         single_pose_discriminator.to(device)
         short_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code, length=2)
@@ -272,15 +279,15 @@ def train():
                                       list(target_encoder.parameters()) +
                                       list(lstm.parameters()) +
                                       list(decoder.parameters()),
-                                lr=config['model']['learning_rate'],
-                                betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
+                                lr=hyp['learning_rate'],
+                                betas=(hyp['optim_beta1'], hyp['optim_beta2']),
                                 amsgrad=True)
 
     discriminator_optimizer = Adam(params=list(single_pose_discriminator.parameters()) + 
                                           list(short_discriminator.parameters()) +
                                           list(long_discriminator.parameters()),
-                                    lr=config['model']['learning_rate'],
-                                    betas=(config['model']['optim_beta1'], config['model']['optim_beta2']),
+                                    lr=hyp['learning_rate'],
+                                    betas=(hyp['optim_beta1'], hyp['optim_beta2']),
                                     amsgrad=True)
 
     pdist = nn.PairwiseDistance(p=2)
@@ -481,7 +488,7 @@ def train():
                     noise_multiplier = noise_injector(t, length=training_frames)  # Noise injection
                     div_0_pred = torch.cat([div_0_root_pred, div_0_local_q_pred[0]], dim=1)
                     div_1_pred = torch.cat([div_1_root_pred, div_1_local_q_pred[0]], dim=1)
-                    div_adv += torch.mean(pdist(div_0_pred, div_1_pred) * noise_multiplier * config['model']['pdist_scale'])
+                    div_adv += torch.mean(pdist(div_0_pred, div_1_pred) * noise_multiplier * hyp['pdist_scale'])
 
                     real_root_next_list.append(root_p[:,t+1])
                     real_root_cur_list.append(root_p[:,t])
@@ -574,8 +581,8 @@ def train():
 
                 long_d_loss = (long_d_fake_loss + long_d_real_loss) / 2.0
 
-                total_d_loss = config['model']['loss_sp_discriminator_weight'] * (sp_d_loss) + \
-                                config['model']['loss_discriminator_weight'] * (short_d_loss + long_d_loss)
+                total_d_loss = hyp['loss_sp_discriminator_weight'] * (sp_d_loss) + \
+                                hyp['loss_discriminator_weight'] * (short_d_loss + long_d_loss)
              
                 # Adversarial
                 ## Single pose generator
@@ -594,9 +601,9 @@ def train():
                 long_g_score = torch.mean(long_g_fake_gan_out[:,0], dim=1)
                 long_g_loss = torch.mean((long_g_score -  1) ** 2)
 
-                total_g_loss = config['model']['loss_sp_generator_weight'] * sp_g_fake_loss + \
-                            config['model']['loss_mi_weight'] * sp_disc_code_loss + \
-                            config['model']['loss_generator_weight'] * (short_g_loss + long_g_loss)
+                total_g_loss = hyp['loss_sp_generator_weight'] * sp_g_fake_loss + \
+                            hyp['loss_mi_weight'] * sp_disc_code_loss + \
+                            hyp['loss_generator_weight'] * (short_g_loss + long_g_loss)
                 div_adv = torch.clamp(div_adv, max=0.3)
                 loss_total = total_g_loss - div_adv            
             scaler.scale(total_d_loss).backward()
@@ -618,7 +625,7 @@ def train():
             scaler.step(generator_optimizer)
 
             scaler.update()
-
+        final_epoch = epoch + 1 == epochs
         # Log
         tags = ['train/LOSS/SP Discriminator', 'train/LOSS/ST Discriminator', 'train/OSS/LT Discriminator', 'train/LOSS/Total Discriminator', \
                 'train/LOSS/SP Generator', 'train/LOSS/SP Code', \
@@ -634,42 +641,82 @@ def train():
                 wandb_logger.log({tag: x}) 
 
         # Save model
-        if (total_epochs and not evolve):  # if save
+        if (not nosave) or (final_epoch):  # if save
 
             ckpt = {'epoch': epoch,
+                    'state_encoder': deepcopy(de_parallel(state_encoder)).half(),
+                    'target_encoder': deepcopy(de_parallel(target_encoder)).half(),
+                    'offset_encoder': deepcopy(de_parallel(offset_encoder)).half(),
+                    'lstm': deepcopy(de_parallel(lstm)).half(),
+                    'decoder': deepcopy(de_parallel(decoder)).half(),
+                    'short_discriminator': deepcopy(de_parallel(short_discriminator)).half(),
+                    'long_discriminator': deepcopy(de_parallel(long_discriminator)).half(),
+                    'single_pose_discriminator': deepcopy(de_parallel(single_pose_discriminator)).half(),
+                    'discriminator_optimizer': discriminator_optimizer.state_dict(),
+                    'generator_optimizer': generator_optimizer.state_dict(),
                     'wandb_id': wandb_logger.wandb_run.id if loggers['wandb'] else None}
 
-            # ckpt = {'epoch': epoch,
-            #         'state_encoder': deepcopy(de_parallel(state_encoder)).half(),
-            #         'target_encoder': deepcopy(de_parallel(target_encoder)).half(),
-            #         'offset_encoder': deepcopy(de_parallel(offset_encoder)).half(),
-            #         'lstm': deepcopy(de_parallel(lstm)).half(),
-            #         'decoder': deepcopy(de_parallel(decoder)).half(),
-            #         'short_discriminator': deepcopy(de_parallel(short_discriminator)).half(),
-            #         'long_discriminator': deepcopy(de_parallel(long_discriminator)).half(),
-            #         'single_pose_discriminator': deepcopy(de_parallel(single_pose_discriminator)).half(),
-            #         'discriminator_optimizer': discriminator_optimizer.state_dict(),
-            #         'generator_optimizer': generator_optimizer.state_dict(),
-            #         'wandb_id': wandb_logger.wandb_run.id if loggers['wandb'] else None}
-
             # Save last, best and delete
-            torch.save(ckpt, weight_path+'/lastest.pt')
-            pathlib.Path(weight_path).mkdir(parents=True, exist_ok=True)
-            torch.save(state_encoder.state_dict(), weight_path + '/state_encoder.pkl')
-            torch.save(target_encoder.state_dict(), weight_path + '/target_encoder.pkl')
-            torch.save(offset_encoder.state_dict(), weight_path + '/offset_encoder.pkl')
-            torch.save(lstm.state_dict(), weight_path + '/lstm.pkl')
-            torch.save(decoder.state_dict(), weight_path + '/decoder.pkl')
-            torch.save(short_discriminator.state_dict(), weight_path + '/short_discriminator.pkl')
-            torch.save(long_discriminator.state_dict(), weight_path + '/long_discriminator.pkl')
+            torch.save(ckpt, last)
             if loggers['wandb']:
-                if ((epoch + 1) % save_period == 0 and not final_epoch) and save_period != -1:
-                    wandb_logger.log_model(model_path, save_period, project, epoch)
+                if ((epoch + 1) % opt.save_interval == 0 and not epochs) and opt.save_interval != -1:
+                    wandb_logger.log_model(last.parent, opt, epoch)
             del ckpt
         # end epoch ----------------------------------------------------------------------------------------------------
     # end training -----------------------------------------------------------------------------------------------------            
     LOGGER.info(f'{epoch - start_epoch + 1} epochs completed in {(time.time() - t0) / 3600:.3f} hours.\n')
     wandb_logger.finish_run()
     torch.cuda.empty_cache()
-if __name__ == '__main__':
-    train()
+
+
+def parse_opt(known=False):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--weights', type=str, default='RMIB-InfoGAN.pt', help='initial weights path')
+    parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='dataset path')
+    parser.add_argument('--hyp', type=str, default='config/hyp.scratch.yaml', help='hyperparameters path')
+    parser.add_argument('--epochs', type=int, default=300)
+    parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
+    parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
+    parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
+    parser.add_argument('--noval', action='store_true', help='only validate final epoch')
+    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--project', default='runs/train', help='save to project/name')
+    parser.add_argument('--entity', default=None, help='W&B entity')
+    parser.add_argument('--exp_name', default='exp', help='save to project/name')
+    parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
+    parser.add_argument('--save_interval', type=int, default=-1, help='Log model after every "save_period" epoch')
+    opt = parser.parse_known_args()[0] if known else parser.parse_args()
+    return opt
+
+def main(opt):
+    # Resume
+    wandb_run = check_wandb_resume(opt)
+    if opt.resume and not wandb_run:  # resume an interrupted run
+        ckpt = opt.resume if isinstance(opt.resume, str) else get_latest_run()  # specified or most recent path
+        assert os.path.isfile(ckpt), 'ERROR: --resume checkpoint does not exist'
+        with open(Path(ckpt).parent.parent / 'opt.yaml') as f:
+            opt = argparse.Namespace(**yaml.safe_load(f))  # replace
+        opt.weights, opt.resume = ckpt, True  # reinstate
+        LOGGER.info(f'Resuming training from {ckpt}')
+    else:
+        # opt.hyp = opt.hyp or ('hyp.finetune.yaml' if opt.weights else 'hyp.scratch.yaml')
+        opt.hyp = check_file(opt.hyp)  # check files
+        opt.exp_name = opt.exp_name
+        opt.save_dir = str(increment_path(Path(opt.project) / opt.exp_name, exist_ok=opt.exist_ok))
+
+    device = select_device(opt.device, batch_size=opt.batch_size)
+
+    train(opt.hyp, opt, device)
+
+
+def run(**kwargs):
+    # Usage: import train; train.run(weights='RMIB_InfoGAN.pt')
+    opt = parse_opt(True)
+    for k, v in kwargs.items():
+        setattr(opt, k, v)
+    main(opt)
+
+
+if __name__ == "__main__":
+    opt = parse_opt()
+    main(opt)

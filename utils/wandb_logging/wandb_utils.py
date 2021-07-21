@@ -127,62 +127,23 @@ class WandbLogger():
         if self.wandb_run:
             if self.job_type == 'Training':
                 if not opt.resume:
-                    wandb_data_dict = self.check_and_upload_dataset(opt) if opt.upload_dataset else data_dict
                     # Info useful for resuming from artifacts
-                    self.wandb_run.config.update({'opt': vars(opt), 'data_dict': wandb_data_dict}, allow_val_change=True)
-                self.data_dict = self.setup_training(opt, data_dict)
-            if self.job_type == 'Dataset Creation':
-                self.data_dict = self.check_and_upload_dataset(opt)
+                    self.wandb_run.config.update({'opt': vars(opt)}, allow_val_change=True)
+                self.setup_training(opt)
         else:
             prefix = colorstr('wandb: ')
-            print(f"{prefix}Install Weights & Biases for YOLOv5 logging with 'pip install wandb' (recommended)")
+            print(f"{prefix}Install Weights & Biases for RMIB-InfoGAN logging with 'pip install wandb' (recommended)")
 
-    def check_and_upload_dataset(self, opt):
-        assert wandb, 'Install wandb to upload dataset'
-        config_path = self.log_dataset_artifact(check_file(opt.data),
-                                                opt.single_cls,
-                                                '' if opt.project == 'runs/train' else Path(opt.project).stem)
-        print("Created dataset config file ", config_path)
-        with open(config_path) as f:
-            wandb_data_dict = yaml.safe_load(f)
-        return wandb_data_dict
-
-    def setup_training(self, opt, data_dict):
+    def setup_training(self, opt):
         self.log_dict, self.current_epoch = {}, 0
-        self.bbox_interval = opt.bbox_interval
         if isinstance(opt.resume, str):
             modeldir, _ = self.download_model_artifact(opt)
             if modeldir:
                 self.weights = Path(modeldir) / "last.pt"
                 config = self.wandb_run.config
-                opt.weights, opt.save_period, opt.batch_size, opt.bbox_interval, opt.epochs, opt.hyp = str(
-                    self.weights), config.save_period, config.batch_size, config.bbox_interval, config.epochs, \
-                                                                                                       config.opt['hyp']
-            data_dict = dict(self.wandb_run.config.data_dict)  # eliminates the need for config file to resume
-        if self.val_artifact is None:  # If --upload_dataset is set, use the existing artifact, don't download
-            self.train_artifact_path, self.train_artifact = self.download_dataset_artifact(data_dict.get('train'),
-                                                                                           opt.artifact_alias)
-            self.val_artifact_path, self.val_artifact = self.download_dataset_artifact(data_dict.get('val'),
-                                                                                       opt.artifact_alias)
-            
-        if self.train_artifact_path is not None:
-            train_path = Path(self.train_artifact_path) / 'data/images/'
-            data_dict['train'] = str(train_path)
-        if self.val_artifact_path is not None:
-            val_path = Path(self.val_artifact_path) / 'data/images/'
-            data_dict['val'] = str(val_path)
-
-
-        if self.val_artifact is not None:
-            self.result_artifact = wandb.Artifact("run_" + wandb.run.id + "_progress", "evaluation")
-            self.result_table = wandb.Table(["epoch", "id", "ground truth", "prediction", "avg_confidence"])
-            self.val_table = self.val_artifact.get("val")
-            if self.val_table_path_map is None:
-                self.map_val_table_path()
-            wandb.log({"validation dataset": self.val_table})
-        if opt.bbox_interval == -1:
-            self.bbox_interval = opt.bbox_interval = (opt.epochs // 10) if opt.epochs > 10 else 1
-        return data_dict
+                opt.weights, opt.save_interval, opt.batch_size, opt.epochs, opt.hyp = str(
+                    self.weights), config.save_interval, config.batch_size, config.epochs, config.opt['hyp']
+        
 
     def download_dataset_artifact(self, path, alias):
         if isinstance(path, str) and path.startswith(WANDB_ARTIFACT_PREFIX):
@@ -205,13 +166,13 @@ class WandbLogger():
             return modeldir, model_artifact
         return None, None
 
-    def log_model(self, path, save_period, project, epoch, total_epochs):
+    def log_model(self, path, opt, epoch, total_epochs):
         model_artifact = wandb.Artifact('run_' + wandb.run.id + '_model', type='model', metadata={
             'original_url': str(path),
             'epochs_trained': epoch + 1,
-            'save period': save_period,
-            'project': project,
-            'total_epochs': total_epochs,
+            'save period': opt.save_interval,
+            'project': opt.project,
+            'total_epochs': opt.epochs,
         })
         wandb.log_artifact(model_artifact,
                            aliases=['epoch ' + str(self.current_epoch)])
