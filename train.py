@@ -30,6 +30,7 @@ from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 from utils.torch_utils import select_device, intersect_dicts, de_parallel
 from utils.general import colorstr, get_latest_run, increment_path, check_file
 
+
 FILE = Path(__file__).absolute()
 sys.path.append(FILE.parents[0].as_posix())  # add yolov5/ to path
 
@@ -39,16 +40,15 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
           opt,
           device,
           ):
+
     save_dir, epochs, batch_size, weights, data_path, resume, noval, nosave, = \
         opt.save_dir, opt.epochs, opt.batch_size, opt.weights, opt.data_path, \
         opt.resume, opt.noval, opt.nosave
-
     # Directories
     save_dir = Path(save_dir)
     wdir = save_dir / 'weights'
     wdir.mkdir(parents=True, exist_ok=True)  # make dir
     last = wdir / 'last.pt'
-
     # Hyperparameters
     if isinstance(hyp, str):
         with open(hyp) as f:
@@ -61,8 +61,10 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     with open(save_dir / 'opt.yaml', 'w') as f:
         yaml.safe_dump(vars(opt), f, sort_keys=False)
 
+
     project = opt.project
     save_interval = opt.save_interval
+
     # Set device to use
     # TODO: Support Multi GPU
     gpu_id = opt.gpu_id
@@ -71,8 +73,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     epochs = opt.epochs
 
     # Set number of InfoGAN Code
-    infogan_code = opt.infogan_code
 
+    infogan_code = hyp['infogan_code']
     # Loggers
     loggers = {'wandb': None, 'tb': None}  # loggers dict
 
@@ -85,6 +87,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     # pathlib.Path(tb_path).mkdir(parents=True, exist_ok=True)
     # summarywriter = SummaryWriter(log_dir=tb_path)
     # W&B
+
     run_id = torch.load(weights).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(weights) else None
     run_id = run_id if resume else None  # start fresh run if transfer learning
     wandb_logger = WandbLogger(opt, save_dir.stem, run_id)
@@ -294,13 +297,13 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
     start_epoch = 0
     if pretrained:
-        start_epoch = ckpt['epoch'] + 1
+        start_epoch = ckpt_state_encoder['epoch'] + 1
         if resume:
             assert start_epoch > 0, '%s training to %g epochs is finished, nothing to resume.' % (weights, epochs)
         if epochs < start_epoch:
             LOGGER.info('%s has been trained for %g epochs. Fine-tuning for %g additional epochs.' %
-                        (weights, ckpt['epoch'], epochs))
-            epochs += ckpt['epoch']  # finetune additional epochs
+                        (weights, ckpt_state_encoder['epoch'], epochs))
+            epochs += ckpt_state_encoder['epoch']  # finetune additional epochs
 
     t0 = time.time()
     scaler = amp.GradScaler(enabled=cuda)

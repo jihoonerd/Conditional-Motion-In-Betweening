@@ -9,8 +9,6 @@ import yaml
 from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).parent.parent.parent))  # add utils/ to path
-from utils.datasets import LoadImagesAndLabels
-from utils.datasets import img2label_paths
 from utils.general import colorstr, check_dataset, check_file
 
 try:
@@ -92,16 +90,11 @@ class WandbLogger():
     models and predictions can also be logged.
     """
 
-    def __init__(self, opt, name, run_id, job_type='Training'):
+    def __init__(self, opt, name, run_id, data_dict, job_type='Training'):
         # Pre-training routine --
         self.job_type = job_type
         self.wandb, self.wandb_run = wandb, None if not wandb else wandb.run
-        self.val_artifact, self.train_artifact = None, None
-        self.train_artifact_path, self.val_artifact_path = None, None
-        self.result_artifact = None
-        self.val_table, self.result_table = None, None
-        self.val_table_path_map = None
-        self.max_imgs_to_log = 16 
+
         # It's more elegant to stick to 1 wandb.init call, but useful config data is overwritten in the WandbLogger's wandb.init call
         if isinstance(opt.resume, str):  # checks resume from artifact
             if opt.resume.startswith(WANDB_ARTIFACT_PREFIX):
@@ -134,25 +127,17 @@ class WandbLogger():
             prefix = colorstr('wandb: ')
             print(f"{prefix}Install Weights & Biases for RMIB-InfoGAN logging with 'pip install wandb' (recommended)")
 
-    def setup_training(self, opt):
+    def setup_training(self, opt):\
         self.log_dict, self.current_epoch = {}, 0
         if isinstance(opt.resume, str):
             modeldir, _ = self.download_model_artifact(opt)
             if modeldir:
                 self.weights = Path(modeldir) / "last.pt"
                 config = self.wandb_run.config
+
                 opt.weights, opt.save_interval, opt.batch_size, opt.epochs, opt.hyp = str(
                     self.weights), config.save_interval, config.batch_size, config.epochs, config.opt['hyp']
         
-
-    def download_dataset_artifact(self, path, alias):
-        if isinstance(path, str) and path.startswith(WANDB_ARTIFACT_PREFIX):
-            artifact_path = Path(remove_prefix(path, WANDB_ARTIFACT_PREFIX) + ":" + alias)
-            dataset_artifact = wandb.use_artifact(artifact_path.as_posix().replace("\\", "/"))
-            assert dataset_artifact is not None, "'Error: W&B dataset artifact doesn\'t exist'"
-            datadir = dataset_artifact.download()
-            return datadir, dataset_artifact
-        return None, None
 
     def download_model_artifact(self, opt):
         if opt.resume.startswith(WANDB_ARTIFACT_PREFIX):
@@ -165,7 +150,6 @@ class WandbLogger():
             assert not is_finished, 'training is finished, can only resume incomplete runs.'
             return modeldir, model_artifact
         return None, None
-
     def log_model(self, path, opt, epoch, total_epochs):
         model_artifact = wandb.Artifact('run_' + wandb.run.id + '_model', type='model', metadata={
             'original_url': str(path),
@@ -202,7 +186,6 @@ class WandbLogger():
                 with all_logging_disabled():
                     wandb.log(self.log_dict)
             wandb.run.finish()
-
 
 @contextmanager
 def all_logging_disabled(highest_level=logging.CRITICAL):
