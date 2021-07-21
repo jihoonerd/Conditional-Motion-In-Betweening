@@ -18,8 +18,9 @@ from tqdm import tqdm
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh, generate_infogan_code
-from rmi.model.network import (Decoder, Discriminator, InputEncoder,
-                               LSTMNetwork, NDiscriminator, QDiscriminator, InfoganCodeEncoder)
+from rmi.model.network import (Decoder, Discriminator, InfoganCodeEncoder,
+                               InputEncoder, LSTMNetwork, NDiscriminator,
+                               QDiscriminator)
 from rmi.model.positional_encoding import PositionalEncoding
 
 
@@ -69,7 +70,6 @@ def train():
     root_v_dim = lafan_dataset.root_v_dim
     local_q_dim = lafan_dataset.local_q_dim
     contact_dim = lafan_dataset.contact_dim
-    ig_d_code_dim = infogan_code
 
     # Initializing networks
     state_in = root_v_dim + local_q_dim + contact_dim
@@ -175,7 +175,7 @@ def train():
             pred_list.append(global_pos[:,0])
 
             # InfoGAN code (per motion)
-            infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=ig_d_code_dim, device=device)
+            infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=infogan_code, device=device)
             
             lstm.h[0] = infogan_code_encoder(infogan_code_gen.to(torch.float))
             assert lstm.h[0].shape == (current_batch_size, lstm_hidden)
@@ -410,6 +410,7 @@ def train():
             weight_epoch = 'trained_weight_' + str(epoch + 1)
             weight_path = os.path.join(model_path, weight_epoch)
             pathlib.Path(weight_path).mkdir(parents=True, exist_ok=True)
+            torch.save(infogan_code_encoder.state_dict(), weight_path + '/infogan_code_encoder.pkl')
             torch.save(state_encoder.state_dict(), weight_path + '/state_encoder.pkl')
             torch.save(target_encoder.state_dict(), weight_path + '/target_encoder.pkl')
             torch.save(offset_encoder.state_dict(), weight_path + '/offset_encoder.pkl')

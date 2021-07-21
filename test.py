@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import write_json
-from rmi.model.network import Decoder, InputEncoder, LSTMNetwork
+from rmi.model.network import Decoder, InputEncoder, LSTMNetwork, InfoganCodeEncoder
 from rmi.model.positional_encoding import PositionalEncoding
 from rmi.vis.pose import plot_pose
 
@@ -50,12 +50,10 @@ def test():
     root_v_dim = lafan_dataset_test.root_v_dim
     local_q_dim = lafan_dataset_test.local_q_dim
     contact_dim = lafan_dataset_test.contact_dim
-    ig_d_code_dim = infogan_code
 
     # Initializing networks
     state_in = root_v_dim + local_q_dim + contact_dim
-    infogan_in = state_in + ig_d_code_dim
-    state_encoder = InputEncoder(input_dim=infogan_in)
+    state_encoder = InputEncoder(input_dim=state_in)
     state_encoder.to(device)
     state_encoder.load_state_dict(torch.load(os.path.join(saved_weight_path, 'state_encoder.pkl'), map_location=device))
 
@@ -69,9 +67,15 @@ def test():
     target_encoder.to(device)
     target_encoder.load_state_dict(torch.load(os.path.join(saved_weight_path, 'target_encoder.pkl'), map_location=device))
 
+    # InfoGAN code to LSTM
+    lstm_hidden = config['model']['lstm_hidden']
+
+    infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_code, out_dim=lstm_hidden)
+    infogan_code_encoder.to(device)
+    infogan_code_encoder.load_state_dict(torch.load(os.path.join(saved_weight_path, 'infogan_code_encoder.pkl'), map_location=device))
+    
     # LSTM
     lstm_in = state_encoder.out_dim * 3
-    lstm_hidden = config['model']['lstm_hidden']
     lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
     lstm.to(device)
     lstm.load_state_dict(torch.load(os.path.join(saved_weight_path, 'lstm.pkl'), map_location=device))
@@ -120,6 +124,7 @@ def test():
             # InfoGAN code
             infogan_code_gen = torch.zeros(current_batch_size, infogan_code)
             infogan_code_gen[:,conditioning_code] = 1
+            lstm.h[0] = infogan_code_encoder(infogan_code_gen.to(torch.float))
 
             training_frames = config['test']['training_frames']
             for t in range(training_frames):
@@ -139,8 +144,7 @@ def test():
                 assert root_p_offset.shape == root_p_t.shape
 
                 # state input
-                vanilla_state_input = torch.cat([local_q_t, root_v_t, contact_t], -1)
-                state_input = torch.cat([vanilla_state_input, infogan_code_gen], dim=1)
+                state_input = torch.cat([local_q_t, root_v_t, contact_t], -1)
                 # offset input
                 root_p_offset_t = root_p_offset - root_p_t
                 local_q_offset_t = local_q_offset - local_q_t
