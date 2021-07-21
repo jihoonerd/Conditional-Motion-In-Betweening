@@ -67,8 +67,6 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
     # Set device to use
     # TODO: Support Multi GPU
-    gpu_id = opt.gpu_id
-    device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
     cuda = device.type != 'cpu'
     epochs = opt.epochs
 
@@ -104,7 +102,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     flip_bvh(data_path)
 
     # Load LAFAN Dataset
-    lafan_dataset = LAFAN1Dataset(lafan_path=data_path, train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=batch_size, shuffle=True, num_workers=opt.data_loader_workers)
 
     # Extract dimension from processed data
@@ -676,6 +674,8 @@ def parse_opt(known=False):
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='RMIB-InfoGAN.pt', help='initial weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='dataset path')
+    parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='dataset path')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data/', help='dataset path')
     parser.add_argument('--hyp', type=str, default='config/hyp.scratch.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
