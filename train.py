@@ -132,7 +132,6 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
         # LSTM
         lstm_in = state_encoder.out_dim * 3
-        print('lstm_hidden', hyp['lstm_hidden'], type(hyp['lstm_hidden']))
         lstm_hidden = int(hyp['lstm_hidden'])
         lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
         lstm.to(device)
@@ -207,8 +206,6 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
         # LSTM
         lstm_in = state_encoder.out_dim * 3
-        print(hyp)
-        print('lstm_hidden', hyp['lstm_hidden'], type(hyp['lstm_hidden']))
         lstm_hidden = int(hyp['lstm_hidden'])        
         lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
         lstm.to(device)
@@ -647,25 +644,25 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 loggers['tb'].add_scalar(tag, x, epoch)
             if loggers['wandb']:
                 wandb_logger.log({tag: x}) 
+        wandb_logger.end_epoch()
 
         # Save model
         if (not nosave) or (final_epoch):  # if save
-
             ckpt = {'epoch': epoch,
-                    'state_encoder': deepcopy(de_parallel(state_encoder)).half(),
-                    'target_encoder': deepcopy(de_parallel(target_encoder)).half(),
-                    'offset_encoder': deepcopy(de_parallel(offset_encoder)).half(),
-                    'lstm': deepcopy(de_parallel(lstm)).half(),
-                    'decoder': deepcopy(de_parallel(decoder)).half(),
-                    'short_discriminator': deepcopy(de_parallel(short_discriminator)).half(),
-                    'long_discriminator': deepcopy(de_parallel(long_discriminator)).half(),
-                    'single_pose_discriminator': deepcopy(de_parallel(single_pose_discriminator)).half(),
+                    'state_encoder': state_encoder.state_dict(),
+                    'target_encoder': target_encoder.state_dict(),
+                    'offset_encoder': offset_encoder.state_dict(),
+                    'lstm': lstm.state_dict(),
+                    'decoder': decoder.state_dict(),
+                    'short_discriminator': short_discriminator.state_dict(),
+                    'long_discriminator': long_discriminator(),
+                    'single_pose_discriminator': single_pose_discriminator.state_dict(),
                     'discriminator_optimizer': discriminator_optimizer.state_dict(),
                     'generator_optimizer': generator_optimizer.state_dict(),
                     'wandb_id': wandb_logger.wandb_run.id if loggers['wandb'] else None}
 
             # Save last, best and delete
-            torch.save(ckpt, last)
+            torch.save(ckpt, 'train-'+epoch+'.pt')
             if loggers['wandb']:
                 if ((epoch + 1) % opt.save_interval == 0 and not epochs) and opt.save_interval != -1:
                     wandb_logger.log_model(last.parent, opt, epoch)
@@ -681,12 +678,11 @@ def parse_opt(known=False):
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='', help='initial weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='dataset path')
-
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='dataset path')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data/', help='dataset path')
     parser.add_argument('--hyp', type=str, default='config/hyp.scratch.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
-    parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
+    parser.add_argument('--batch-size', type=int, default=64, help='total batch size for all GPUs')
     parser.add_argument('--data_loader_workers', type=int, default=4, help='data_loader_workers')
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
     parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
@@ -714,6 +710,9 @@ def main(opt):
         # opt.hyp = opt.hyp or ('hyp.finetune.yaml' if opt.weights else 'hyp.scratch.yaml')
         opt.hyp = check_file(opt.hyp)  # check files
         opt.exp_name = opt.exp_name
+        # time_stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        # model_path = os.path.join(opt.exp_name, time_stamp)
+        # opt.save_dir = Path(model_path).mkdir(parents=True, exist_ok=True)
         opt.save_dir = str(increment_path(Path(opt.project) / opt.exp_name, exist_ok=opt.exist_ok))
 
     device = select_device(opt.device, batch_size=opt.batch_size)

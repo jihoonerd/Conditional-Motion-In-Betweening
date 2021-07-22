@@ -148,13 +148,6 @@ class WandbLogger():
             with all_logging_disabled():
                 wandb.log(self.log_dict)
                 self.log_dict = {}
-                self.bbox_media_panel_images = []
-            if self.result_artifact:
-                self.result_artifact.add(self.result_table, 'result')
-                wandb.log_artifact(self.result_artifact, aliases=['epoch ' + str(self.current_epoch)])
-                wandb.log({"evaluation": self.result_table})
-                self.result_table = wandb.Table(["epoch", "id", "ground truth", "prediction", ""])
-                self.result_artifact = wandb.Artifact("run_" + wandb.run.id + "_progress", "evaluation")
 
     def finish_run(self):
         if self.wandb_run:
