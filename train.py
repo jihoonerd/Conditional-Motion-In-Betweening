@@ -660,7 +660,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                     'wandb_id': wandb_logger.wandb_run.id if loggers['wandb'] else None}
 
             # Save last, best and delete
-            torch.save(ckpt, 'train-'+epoch+'.pt')
+            torch.save(ckpt, 'train-'+str(epoch)+'.pt')
             if loggers['wandb']:
                 if ((epoch + 1) % opt.save_interval == 0 and not epochs) and opt.save_interval != -1:
                     wandb_logger.log_model(last.parent, opt, epoch)
