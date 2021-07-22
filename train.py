@@ -696,7 +696,7 @@ def parse_opt(known=False):
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--save_interval', type=int, default=-1, help='Log model after every "save_period" epoch')
+    parser.add_argument('--save_interval', type=int, default=1, help='Log model after every "save_period" epoch')
     opt = parser.parse_known_args()[0] if known else parser.parse_args()
     return opt
 
