@@ -611,15 +611,17 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                             hyp['loss_mi_weight'] * sp_disc_code_loss + \
                             hyp['loss_generator_weight'] * (short_g_loss + long_g_loss)
                 div_adv = torch.clamp(div_adv, max=0.3)
-                loss_total = total_g_loss - div_adv            
+                loss_total = total_g_loss - div_adv     
+            # TOTAL LOSS
+            scaler.scale(loss_total).backward()
+       
             scaler.scale(total_d_loss).backward()
             scaler.unscale_(discriminator_optimizer)
 
             scaler.step(discriminator_optimizer)
 
     
-            # TOTAL LOSS
-            scaler.scale(loss_total).backward()
+
 
             # Gradient clipping for training stability
             scaler.unscale_(generator_optimizer)
