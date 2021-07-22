@@ -655,10 +655,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                     'lstm': lstm.state_dict(),
                     'decoder': decoder.state_dict(),
                     'short_discriminator': short_discriminator.state_dict(),
-                    'long_discriminator': long_discriminator().state_dict(),
+                    'long_discriminator': long_discriminator.state_dict(),
                     'single_pose_discriminator': single_pose_discriminator.state_dict(),
-                    'discriminator_optimizer': discriminator_optimizer.state_dict(),
-                    'generator_optimizer': generator_optimizer.state_dict(),
                     'wandb_id': wandb_logger.wandb_run.id if loggers['wandb'] else None}
 
             # Save last, best and delete
