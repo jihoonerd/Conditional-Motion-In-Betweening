@@ -305,8 +305,6 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             epochs += ckpt_state_encoder['epoch']  # finetune additional epochs
 
     t0 = time.time()
-    scaler = amp.GradScaler(enabled=cuda)
-
     LOGGER.info(f'Starting training for {epochs} epochs...')
     for epoch in range(start_epoch, epochs):
 
@@ -381,253 +379,251 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             real_quaternion_noise_dist = Normal(loc=torch.zeros(88, device=device), scale=0.03)
 
             with amp.autocast(enabled=cuda):
-                for t in range(training_frames):
-                    if t  == 0: # if initial frame
-                        root_p_t = root_p[:,t]
-                        root_v_t = root_v[:,t]
+            for t in range(training_frames):
+                if t  == 0: # if initial frame
+                    root_p_t = root_p[:,t]
+                    root_v_t = root_v[:,t]
 
-                        local_q_t = local_q[:,t]
-                        local_q_t = local_q_t.view(local_q_t.size(0), -1)
-                        contact_t = contact[:,t]
-                    else:
-                        root_p_t = root_pred  # Be careful about dimension
-                        root_v_t = root_v_pred[0]
+                    local_q_t = local_q[:,t]
+                    local_q_t = local_q_t.view(local_q_t.size(0), -1)
+                    contact_t = contact[:,t]
+                else:
+                    root_p_t = root_pred  # Be careful about dimension
+                    root_v_t = root_v_pred[0]
 
-                        local_q_t = local_q_pred[0]
-                        contact_t = contact_pred[0]
+                    local_q_t = local_q_pred[0]
+                    contact_t = contact_pred[0]
 
-                    assert root_p_offset.shape == root_p_t.shape
+                assert root_p_offset.shape == root_p_t.shape
 
-                    # state input
-                    vanilla_state_input = torch.cat([local_q_t, root_v_t, contact_t], -1)
+                # state input
+                vanilla_state_input = torch.cat([local_q_t, root_v_t, contact_t], -1)
 
-                    # concatenate InfoGAN code
-                    state_input = torch.cat([vanilla_state_input, infogan_code_gen], dim=1)
+                # concatenate InfoGAN code
+                state_input = torch.cat([vanilla_state_input, infogan_code_gen], dim=1)
 
-                    # offset input
-                    root_p_offset_t = root_p_offset - root_p_t
-                    local_q_offset_t = local_q_offset - local_q_t
-                    offset_input = torch.cat([root_p_offset_t, local_q_offset_t], -1)
+                # offset input
+                root_p_offset_t = root_p_offset - root_p_t
+                local_q_offset_t = local_q_offset - local_q_t
+                offset_input = torch.cat([root_p_offset_t, local_q_offset_t], -1)
 
-                    # target input
-                    target_input = target
+                # target input
+                target_input = target
 
-                    h_state = state_encoder(state_input)
-                    h_offset = offset_encoder(offset_input)
-                    h_target = target_encoder(target_input)
-                    
-                    # Use positional encoding
-                    tta = training_frames - t
-                    h_state = pe(h_state, tta)
-                    h_offset = pe(h_offset, tta)  # (batch size, 256)
-                    h_target = pe(h_target, tta)  # (batch size, 256)
-
-                    offset_target = torch.cat([h_offset, h_target], dim=1)
-
-                    # lstm
-                    h_in = torch.cat([h_state, offset_target], dim=1).unsqueeze(0)
-                    h_out = lstm(h_in)
-
-                    # decoder
-                    h_pred, contact_pred = decoder(h_out)
-                    local_q_v_pred = h_pred[:,:,:target_in]
-                    local_q_pred = local_q_v_pred + local_q_t
-
-                    local_q_pred_list.append(local_q_pred[0])
-                    local_q_cur_list.append(local_q_t)
-                    
-                    local_q_pred_ = local_q_pred.view(local_q_pred.size(0), local_q_pred.size(1), -1, 4)
-                    local_q_pred_ = local_q_pred_ / torch.norm(local_q_pred_, dim = -1, keepdim = True)
-
-                    root_v_pred = h_pred[:,:,target_in:]
-                    root_pred = root_v_pred + root_p_t
-
-                    root_p_pred_list.append(root_pred[0])
-                    root_p_cur_list.append(root_p_t)
-
-                    contact_pred_list.append(contact_pred[0])
-                    contact_cur_list.append(contact_t)
-
-                    # FK
-                    root_pred = root_pred.squeeze()
-                    local_q_pred_ = local_q_pred_.squeeze()
-                    pos_pred, _ = skeleton.forward_kinematics(root_pred, local_q_pred_, rot_repr='quaternion')
-                    pred_list.append(pos_pred)
-
-                    local_q_next = local_q[:,t+1]
-                    local_q_next = local_q_next.view(local_q_next.size(0), -1)
-
-                    # Divergence
-                    diverging_state_0 = torch.cat([vanilla_state_input, diverging_code_0], dim=1)
-                    diverging_state_1 = torch.cat([vanilla_state_input, diverging_code_1], dim=1)
-
-                    h_state_diverging_0 = state_encoder(diverging_state_0)
-                    h_state_diverging_1 = state_encoder(diverging_state_1)
-                    
-                    h_state_diverging_0 = pe(h_state_diverging_0, tta)
-                    h_state_diverging_1 = pe(h_state_diverging_1, tta)
-
-                    h_div_0_in = torch.cat([h_state_diverging_0, offset_target], dim=1).unsqueeze(0)
-                    h_div_1_in = torch.cat([h_state_diverging_1, offset_target], dim=1).unsqueeze(0)
-
-                    h_div_0_out = lstm(h_div_0_in)
-                    h_div_1_out = lstm(h_div_1_in)
-
-                    div_0_h_pred, _ = decoder(h_div_0_out)
-                    div_0_local_q_v_pred = div_0_h_pred[:,:,:target_in]
-                    div_0_local_q_pred = div_0_local_q_v_pred + local_q_t
-                    div_0_root_v_pred = div_0_h_pred[:,:,target_in:]
-                    div_0_root_pred = div_0_root_v_pred + root_p_t
-                    div_0_root_pred = div_0_root_pred.squeeze()
-                    
-                    div_1_h_pred, _ = decoder(h_div_1_out)
-                    div_1_local_q_v_pred = div_1_h_pred[:,:,:target_in]
-                    div_1_local_q_pred = div_1_local_q_v_pred + local_q_t
-                    div_1_root_v_pred = div_1_h_pred[:,:,target_in:]
-                    div_1_root_pred = div_1_root_v_pred + root_p_t
-                    div_1_root_pred = div_1_root_pred.squeeze()
-
-                    noise_multiplier = noise_injector(t, length=training_frames)  # Noise injection
-                    div_0_pred = torch.cat([div_0_root_pred, div_0_local_q_pred[0]], dim=1)
-                    div_1_pred = torch.cat([div_1_root_pred, div_1_local_q_pred[0]], dim=1)
-                    div_adv += torch.mean(pdist(div_0_pred, div_1_pred) * noise_multiplier * hyp['pdist_scale'])
-
-                    real_root_next_list.append(root_p[:,t+1])
-                    real_root_cur_list.append(root_p[:,t])
-                    real_q_next_list.append(local_q[:,t+1].view(local_q_next.size(0), -1))
-                    real_q_cur_list.append(local_q[:,t].view(local_q_next.size(0), -1))
-                    real_contact_next_list.append(contact[:,t+1])
-                    real_contact_cur_list.append(contact[:,t])
-
-                    
-                # Adversarial
-                fake_pos_input = torch.cat([x.reshape(current_batch_size, -1).unsqueeze(-1) for x in pred_list[:-1]], -1)
-                fake_v_input = torch.cat([fake_pos_input[:,:,1:] - fake_pos_input[:,:,:-1], torch.zeros_like(fake_pos_input[:,:,0:1], device=device)], -1)
-                fake_input = torch.cat([fake_pos_input, fake_v_input], 1)
-
-                real_pos_input = torch.cat([global_pos[:, i].reshape(current_batch_size, -1).unsqueeze(-1) for i in range(lafan_dataset.cur_seq_length)], -1)
-                real_v_input = torch.cat([real_pos_input[:,:,1:] - real_pos_input[:,:,:-1], torch.zeros_like(real_pos_input[:,:,0:1], device=device)], -1)
-                real_input = torch.cat([real_pos_input, real_v_input], 1)
-
-                assert fake_input.shape == real_input.shape
-
-                root_pred = torch.stack(root_p_pred_list, -1)
-                single_pose_pred_quaternion = torch.stack(local_q_pred_list, -1)
-                single_pose_real_quaternion = local_q[:,:lafan_dataset.cur_seq_length].reshape(current_batch_size, lafan_dataset.cur_seq_length, -1).permute(0,2,1)
-
-                assert single_pose_pred_quaternion.shape == single_pose_real_quaternion.shape
-
-                start_root = torch.stack([root_p[:, 0] for _ in range(lafan_dataset.max_transition_length)], dim=2)
-                start_quaternion = torch.stack([local_q[:,0,:,:].reshape(current_batch_size, -1) for _ in range(lafan_dataset.max_transition_length)], dim=2)
-
-                target_root = torch.stack([root_p[:, training_frames] for _ in range(lafan_dataset.max_transition_length)], dim=2)
-                target_quaternion = torch.stack([local_q[:,training_frames,:,:].reshape(current_batch_size, -1) for _ in range(lafan_dataset.max_transition_length)], dim=2)
-
-                current_root = torch.stack(root_p_cur_list, -1)
-                current_real_root = torch.stack(real_root_cur_list, -1)
-                current_real_root_noise = real_root_noise_dist.sample((current_real_root.shape[0], 30)).permute(0,2,1)
-                current_real_root += current_real_root_noise
-                next_real_root = torch.stack(real_root_next_list, -1)
-
-                current_quaternion = torch.stack(local_q_cur_list, -1)
-                current_real_quaternion = torch.stack(real_q_cur_list, -1)
-                current_real_quaternion_noise = torch.clamp(real_quaternion_noise_dist.sample((current_real_root.shape[0], 30)).permute(0,2,1), min=-1, max=1)
-                current_real_quaternion += current_real_quaternion_noise
-                next_real_quaternion = torch.stack(real_q_next_list, -1)
-
-                current_contact = torch.stack(contact_cur_list, -1)
-                pred_contact = torch.stack(contact_pred_list, -1)
-                current_real_contact = torch.stack(real_contact_cur_list, -1)
-                next_real_contact = torch.stack(real_contact_next_list, -1)
-
-
-                single_pose_fake_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_root, current_quaternion, current_contact, root_pred, single_pose_pred_quaternion, pred_contact], dim=1)
-                single_pose_real_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_real_root, current_real_quaternion, current_real_contact, next_real_root, next_real_quaternion, next_real_contact], dim=1)
-
-                # InfoGAN Loss (maintain LSGAN for original gal V(D,G))
+                h_state = state_encoder(state_input)
+                h_offset = offset_encoder(offset_input)
+                h_target = target_encoder(target_input)
                 
-                ## Single pose discriminator
-                sp_fake_input = single_pose_fake_input.permute(0,2,1).reshape(-1, sp_discriminator_in)
-                sp_d_fake_gan_out, _ = single_pose_discriminator(sp_fake_input.detach())
-                sp_d_fake_gan_score = sp_d_fake_gan_out[:, 0]
+                # Use positional encoding
+                tta = training_frames - t
+                h_state = pe(h_state, tta)
+                h_offset = pe(h_offset, tta)  # (batch size, 256)
+                h_target = pe(h_target, tta)  # (batch size, 256)
 
-                sp_real_input = single_pose_real_input.permute(0,2,1).reshape(-1, sp_discriminator_in)
-                sp_d_real_gan_out, _ = single_pose_discriminator(sp_real_input.detach())
-                sp_d_real_gan_score = sp_d_real_gan_out[:, 0]
+                offset_target = torch.cat([h_offset, h_target], dim=1)
 
-                sp_d_fake_loss = torch.mean((sp_d_fake_gan_score) ** 2)
-                sp_d_real_loss = torch.mean((sp_d_real_gan_score - 1) ** 2)
-                sp_d_loss = (sp_d_fake_loss + sp_d_real_loss) / 2.0
+                # lstm
+                h_in = torch.cat([h_state, offset_target], dim=1).unsqueeze(0)
+                h_out = lstm(h_in)
 
-                ## Short discriminator
-                short_d_fake_gan_out, _ = short_discriminator(fake_input.detach())
-                short_d_fake_gan_score = torch.mean(short_d_fake_gan_out[:,0], dim=1)
+                # decoder
+                h_pred, contact_pred = decoder(h_out)
+                local_q_v_pred = h_pred[:,:,:target_in]
+                local_q_pred = local_q_v_pred + local_q_t
 
-                short_d_real_gan_out, _ = short_discriminator(real_input)
-                short_d_real_gan_score = torch.mean(short_d_real_gan_out[:,0], dim=1)
+                local_q_pred_list.append(local_q_pred[0])
+                local_q_cur_list.append(local_q_t)
+                
+                local_q_pred_ = local_q_pred.view(local_q_pred.size(0), local_q_pred.size(1), -1, 4)
+                local_q_pred_ = local_q_pred_ / torch.norm(local_q_pred_, dim = -1, keepdim = True)
 
-                short_d_fake_loss = torch.mean((short_d_fake_gan_score) ** 2)  
-                short_d_real_loss = torch.mean((short_d_real_gan_score -  1) ** 2)
+                root_v_pred = h_pred[:,:,target_in:]
+                root_pred = root_v_pred + root_p_t
 
-                short_d_loss = (short_d_fake_loss + short_d_real_loss) / 2.0
+                root_p_pred_list.append(root_pred[0])
+                root_p_cur_list.append(root_p_t)
 
-                ## Long  discriminator
-                long_d_fake_gan_out, _ = long_discriminator(fake_input.detach())
-                long_d_fake_gan_score = torch.mean(long_d_fake_gan_out[:,0], dim=1)
+                contact_pred_list.append(contact_pred[0])
+                contact_cur_list.append(contact_t)
 
-                long_d_real_gan_out, _ = long_discriminator(real_input)
-                long_d_real_gan_score = torch.mean(long_d_real_gan_out[:,0], dim=1)
+                # FK
+                root_pred = root_pred.squeeze()
+                local_q_pred_ = local_q_pred_.squeeze()
+                pos_pred, _ = skeleton.forward_kinematics(root_pred, local_q_pred_, rot_repr='quaternion')
+                pred_list.append(pos_pred)
 
-                long_d_fake_loss = torch.mean((long_d_fake_gan_score) ** 2)
-                long_d_real_loss = torch.mean((long_d_real_gan_score -  1) ** 2)
+                local_q_next = local_q[:,t+1]
+                local_q_next = local_q_next.view(local_q_next.size(0), -1)
 
-                long_d_loss = (long_d_fake_loss + long_d_real_loss) / 2.0
+                # Divergence
+                diverging_state_0 = torch.cat([vanilla_state_input, diverging_code_0], dim=1)
+                diverging_state_1 = torch.cat([vanilla_state_input, diverging_code_1], dim=1)
 
-                total_d_loss = hyp['loss_sp_discriminator_weight'] * (sp_d_loss) + \
-                                hyp['loss_discriminator_weight'] * (short_d_loss + long_d_loss)
+                h_state_diverging_0 = state_encoder(diverging_state_0)
+                h_state_diverging_1 = state_encoder(diverging_state_1)
+                
+                h_state_diverging_0 = pe(h_state_diverging_0, tta)
+                h_state_diverging_1 = pe(h_state_diverging_1, tta)
+
+                h_div_0_in = torch.cat([h_state_diverging_0, offset_target], dim=1).unsqueeze(0)
+                h_div_1_in = torch.cat([h_state_diverging_1, offset_target], dim=1).unsqueeze(0)
+
+                h_div_0_out = lstm(h_div_0_in)
+                h_div_1_out = lstm(h_div_1_in)
+
+                div_0_h_pred, _ = decoder(h_div_0_out)
+                div_0_local_q_v_pred = div_0_h_pred[:,:,:target_in]
+                div_0_local_q_pred = div_0_local_q_v_pred + local_q_t
+                div_0_root_v_pred = div_0_h_pred[:,:,target_in:]
+                div_0_root_pred = div_0_root_v_pred + root_p_t
+                div_0_root_pred = div_0_root_pred.squeeze()
+                
+                div_1_h_pred, _ = decoder(h_div_1_out)
+                div_1_local_q_v_pred = div_1_h_pred[:,:,:target_in]
+                div_1_local_q_pred = div_1_local_q_v_pred + local_q_t
+                div_1_root_v_pred = div_1_h_pred[:,:,target_in:]
+                div_1_root_pred = div_1_root_v_pred + root_p_t
+                div_1_root_pred = div_1_root_pred.squeeze()
+
+                noise_multiplier = noise_injector(t, length=training_frames)  # Noise injection
+                div_0_pred = torch.cat([div_0_root_pred, div_0_local_q_pred[0]], dim=1)
+                div_1_pred = torch.cat([div_1_root_pred, div_1_local_q_pred[0]], dim=1)
+                div_adv += torch.mean(pdist(div_0_pred, div_1_pred) * noise_multiplier * hyp['pdist_scale'])
+
+                real_root_next_list.append(root_p[:,t+1])
+                real_root_cur_list.append(root_p[:,t])
+                real_q_next_list.append(local_q[:,t+1].view(local_q_next.size(0), -1))
+                real_q_cur_list.append(local_q[:,t].view(local_q_next.size(0), -1))
+                real_contact_next_list.append(contact[:,t+1])
+                real_contact_cur_list.append(contact[:,t])
+
+                
+            # Adversarial
+            fake_pos_input = torch.cat([x.reshape(current_batch_size, -1).unsqueeze(-1) for x in pred_list[:-1]], -1)
+            fake_v_input = torch.cat([fake_pos_input[:,:,1:] - fake_pos_input[:,:,:-1], torch.zeros_like(fake_pos_input[:,:,0:1], device=device)], -1)
+            fake_input = torch.cat([fake_pos_input, fake_v_input], 1)
+
+            real_pos_input = torch.cat([global_pos[:, i].reshape(current_batch_size, -1).unsqueeze(-1) for i in range(lafan_dataset.cur_seq_length)], -1)
+            real_v_input = torch.cat([real_pos_input[:,:,1:] - real_pos_input[:,:,:-1], torch.zeros_like(real_pos_input[:,:,0:1], device=device)], -1)
+            real_input = torch.cat([real_pos_input, real_v_input], 1)
+
+            assert fake_input.shape == real_input.shape
+
+            root_pred = torch.stack(root_p_pred_list, -1)
+            single_pose_pred_quaternion = torch.stack(local_q_pred_list, -1)
+            single_pose_real_quaternion = local_q[:,:lafan_dataset.cur_seq_length].reshape(current_batch_size, lafan_dataset.cur_seq_length, -1).permute(0,2,1)
+
+            assert single_pose_pred_quaternion.shape == single_pose_real_quaternion.shape
+
+            start_root = torch.stack([root_p[:, 0] for _ in range(lafan_dataset.max_transition_length)], dim=2)
+            start_quaternion = torch.stack([local_q[:,0,:,:].reshape(current_batch_size, -1) for _ in range(lafan_dataset.max_transition_length)], dim=2)
+
+            target_root = torch.stack([root_p[:, training_frames] for _ in range(lafan_dataset.max_transition_length)], dim=2)
+            target_quaternion = torch.stack([local_q[:,training_frames,:,:].reshape(current_batch_size, -1) for _ in range(lafan_dataset.max_transition_length)], dim=2)
+
+            current_root = torch.stack(root_p_cur_list, -1)
+            current_real_root = torch.stack(real_root_cur_list, -1)
+            current_real_root_noise = real_root_noise_dist.sample((current_real_root.shape[0], 30)).permute(0,2,1)
+            current_real_root += current_real_root_noise
+            next_real_root = torch.stack(real_root_next_list, -1)
+
+            current_quaternion = torch.stack(local_q_cur_list, -1)
+            current_real_quaternion = torch.stack(real_q_cur_list, -1)
+            current_real_quaternion_noise = torch.clamp(real_quaternion_noise_dist.sample((current_real_root.shape[0], 30)).permute(0,2,1), min=-1, max=1)
+            current_real_quaternion += current_real_quaternion_noise
+            next_real_quaternion = torch.stack(real_q_next_list, -1)
+
+            current_contact = torch.stack(contact_cur_list, -1)
+            pred_contact = torch.stack(contact_pred_list, -1)
+            current_real_contact = torch.stack(real_contact_cur_list, -1)
+            next_real_contact = torch.stack(real_contact_next_list, -1)
+
+
+            single_pose_fake_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_root, current_quaternion, current_contact, root_pred, single_pose_pred_quaternion, pred_contact], dim=1)
+            single_pose_real_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_real_root, current_real_quaternion, current_real_contact, next_real_root, next_real_quaternion, next_real_contact], dim=1)
+
+            # InfoGAN Loss (maintain LSGAN for original gal V(D,G))
             
-                # Adversarial
-                ## Single pose generator
-                sp_g_fake_gan_out, sp_g_fake_q_discrete = single_pose_discriminator(sp_fake_input)
-                sp_g_fake_gan_score = sp_g_fake_gan_out[:, 0]
-                sp_g_fake_loss = torch.mean((sp_g_fake_gan_score - 1) ** 2)
+            ## Single pose discriminator
+            sp_fake_input = single_pose_fake_input.permute(0,2,1).reshape(-1, sp_discriminator_in)
+            sp_d_fake_gan_out, _ = single_pose_discriminator(sp_fake_input.detach())
+            sp_d_fake_gan_score = sp_d_fake_gan_out[:, 0]
 
-                fake_indices_expanded = fake_indices.unsqueeze(1).expand(fake_indices.shape[0], training_frames).reshape(sp_g_fake_q_discrete.shape[0])
-                sp_disc_code_loss = infogan_disc_loss(sp_g_fake_q_discrete, fake_indices_expanded)
+            sp_real_input = single_pose_real_input.permute(0,2,1).reshape(-1, sp_discriminator_in)
+            sp_d_real_gan_out, _ = single_pose_discriminator(sp_real_input.detach())
+            sp_d_real_gan_score = sp_d_real_gan_out[:, 0]
 
-                short_g_fake_gan_out, _ = short_discriminator(fake_input)
-                short_g_score = torch.mean(short_g_fake_gan_out[:,0], dim=1)
-                short_g_loss = torch.mean((short_g_score -  1) ** 2)
+            sp_d_fake_loss = torch.mean((sp_d_fake_gan_score) ** 2)
+            sp_d_real_loss = torch.mean((sp_d_real_gan_score - 1) ** 2)
+            sp_d_loss = (sp_d_fake_loss + sp_d_real_loss) / 2.0
 
-                long_g_fake_gan_out, _ = long_discriminator(fake_input)
-                long_g_score = torch.mean(long_g_fake_gan_out[:,0], dim=1)
-                long_g_loss = torch.mean((long_g_score -  1) ** 2)
+            ## Short discriminator
+            short_d_fake_gan_out, _ = short_discriminator(fake_input.detach())
+            short_d_fake_gan_score = torch.mean(short_d_fake_gan_out[:,0], dim=1)
 
-                total_g_loss = hyp['loss_sp_generator_weight'] * sp_g_fake_loss + \
-                            hyp['loss_mi_weight'] * sp_disc_code_loss + \
-                            hyp['loss_generator_weight'] * (short_g_loss + long_g_loss)
-                div_adv = torch.clamp(div_adv, max=0.3)
-                loss_total = total_g_loss - div_adv     
-    
+            short_d_real_gan_out, _ = short_discriminator(real_input)
+            short_d_real_gan_score = torch.mean(short_d_real_gan_out[:,0], dim=1)
+
+            short_d_fake_loss = torch.mean((short_d_fake_gan_score) ** 2)  
+            short_d_real_loss = torch.mean((short_d_real_gan_score -  1) ** 2)
+
+            short_d_loss = (short_d_fake_loss + short_d_real_loss) / 2.0
+
+            ## Long  discriminator
+            long_d_fake_gan_out, _ = long_discriminator(fake_input.detach())
+            long_d_fake_gan_score = torch.mean(long_d_fake_gan_out[:,0], dim=1)
+
+            long_d_real_gan_out, _ = long_discriminator(real_input)
+            long_d_real_gan_score = torch.mean(long_d_real_gan_out[:,0], dim=1)
+
+            long_d_fake_loss = torch.mean((long_d_fake_gan_score) ** 2)
+            long_d_real_loss = torch.mean((long_d_real_gan_score -  1) ** 2)
+
+            long_d_loss = (long_d_fake_loss + long_d_real_loss) / 2.0
+
+            total_d_loss = hyp['loss_sp_discriminator_weight'] * (sp_d_loss) + \
+                            hyp['loss_discriminator_weight'] * (short_d_loss + long_d_loss)
+            
+
+
+            # Adversarial
+            ## Single pose generator
+            sp_g_fake_gan_out, sp_g_fake_q_discrete = single_pose_discriminator(sp_fake_input)
+            sp_g_fake_gan_score = sp_g_fake_gan_out[:, 0]
+            sp_g_fake_loss = torch.mean((sp_g_fake_gan_score - 1) ** 2)
+
+            fake_indices_expanded = fake_indices.unsqueeze(1).expand(fake_indices.shape[0], training_frames).reshape(sp_g_fake_q_discrete.shape[0])
+            sp_disc_code_loss = infogan_disc_loss(sp_g_fake_q_discrete, fake_indices_expanded)
+
+            short_g_fake_gan_out, _ = short_discriminator(fake_input)
+            short_g_score = torch.mean(short_g_fake_gan_out[:,0], dim=1)
+            short_g_loss = torch.mean((short_g_score -  1) ** 2)
+
+            long_g_fake_gan_out, _ = long_discriminator(fake_input)
+            long_g_score = torch.mean(long_g_fake_gan_out[:,0], dim=1)
+            long_g_loss = torch.mean((long_g_score -  1) ** 2)
+
+            total_g_loss = hyp['loss_sp_generator_weight'] * sp_g_fake_loss + \
+                        hyp['loss_mi_weight'] * sp_disc_code_loss + \
+                        hyp['loss_generator_weight'] * (short_g_loss + long_g_loss)
+            div_adv = torch.clamp(div_adv, max=0.3)
+            loss_total = total_g_loss - div_adv     
             # TOTAL LOSS
-
             generator_optimizer.zero_grad()
-            scaler.scale(loss_total).backward()
+            
+            loss_total.backward()
+    
             # Gradient clipping for training stability
-            scaler.unscale_(generator_optimizer)
             torch.nn.utils.clip_grad_norm_(state_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(offset_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(target_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(lstm.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(decoder.parameters(), 1.0)
-            scaler.step(generator_optimizer)
-
+            generator_optimizer.step()
+            
             discriminator_optimizer.zero_grad()
-            scaler.scale(total_d_loss).backward()
-            scaler.unscale_(discriminator_optimizer)
-            scaler.step(discriminator_optimizer)
-
-            scaler.update()
+            total_d_loss.backward()
+            discriminator_optimizer.step()
         final_epoch = epoch + 1 == epochs
         # Log
         tags = ['train/LOSS/SP Discriminator', 'train/LOSS/ST Discriminator', 'train/OSS/LT Discriminator', 'train/LOSS/Total Discriminator', \
