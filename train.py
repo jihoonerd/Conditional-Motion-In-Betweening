@@ -120,15 +120,13 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         ckpt = torch.load(weights)
         # Initializing networks
         state_in = root_v_dim + local_q_dim + contact_dim
-        infogan_in = state_in + infogan_code
         offset_in = root_v_dim + local_q_dim
         target_in = local_q_dim
-        state_encoder = InputEncoder(input_dim=infogan_in)
+        state_encoder = InputEncoder(input_dim=state_in)
         state_encoder.to(device)
 
         offset_encoder = InputEncoder(input_dim=offset_in)
         offset_encoder.to(device)
-
 
         target_encoder = InputEncoder(input_dim=target_in)
         target_encoder.to(device)
@@ -190,11 +188,10 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     else : 
         # Initializing networks
         state_in = root_v_dim + local_q_dim + contact_dim
-        infogan_in = state_in + infogan_code
         offset_in = root_v_dim + local_q_dim
         target_in = local_q_dim
                 
-        state_encoder = InputEncoder(input_dim=infogan_in)
+        state_encoder = InputEncoder(input_dim=state_in)
         state_encoder.to(device)
 
         offset_encoder = InputEncoder(input_dim=offset_in)
