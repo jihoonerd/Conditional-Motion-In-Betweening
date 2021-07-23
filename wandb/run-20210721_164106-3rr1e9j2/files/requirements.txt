@@ -246,7 +246,7 @@ tensorboard-plugin-wit==1.7.0
 tensorboard==1.15.0
 tensorboardx==2.1
 tensorflow-estimator==1.15.1
-tensorflow-gpu==1.15.3
+tensorflow-gpu==2.4.2
 tensorflow-hub==0.7.0
 termcolor==1.1.0
 terminado==0.8.1
