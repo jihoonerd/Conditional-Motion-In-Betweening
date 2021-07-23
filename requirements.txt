@@ -27,7 +27,7 @@ oauthlib==3.1.0
 packaging==20.9
 pandas==1.2.3
 pathtools==0.1.2
-Pillow==8.2.0
+Pillow==8.1.2
 pluggy==0.13.1
 portalocker==2.2.1
 promise==2.3
@@ -57,6 +57,7 @@ tabulate==0.8.9
 tensorboard==2.4.1
 tensorboard-plugin-wit==1.8.0
 termcolor==1.1.0
+thop==0.0.31.post2005241907
 threadpoolctl==2.1.0
 toml==0.10.2
 torch==1.8.1+cu111
