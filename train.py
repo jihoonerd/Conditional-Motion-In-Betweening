@@ -1,13 +1,9 @@
-import os
-import pickle
-from pathlib import Path
-import shutil
-from datetime import datetime
-import time
-import logging 
-from copy import deepcopy
-import sys
 import argparse
+import logging
+import os
+import sys
+import time
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -15,9 +11,9 @@ import torch.nn as nn
 import yaml
 from kpt.model.skeleton import TorchSkeleton
 from pymo.parsers import BVHParser
+from torch.cuda import amp
 from torch.distributions.normal import Normal
 from torch.optim import Adam
-from torch.cuda import amp
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
@@ -28,14 +24,12 @@ from rmi.model.network import (Decoder, Discriminator, InfoganCodeEncoder,
                                InputEncoder, LSTMNetwork, NDiscriminator,
                                QDiscriminator)
 from rmi.model.positional_encoding import PositionalEncoding
-
+from utils.general import check_file, colorstr, get_latest_run, increment_path
+from utils.torch_utils import de_parallel, intersect_dicts, select_device
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
-from utils.torch_utils import select_device, intersect_dicts, de_parallel
-from utils.general import colorstr, get_latest_run, increment_path, check_file
-
 
 FILE = Path(__file__).absolute()
-sys.path.append(FILE.parents[0].as_posix())  # add yolov5/ to path
+sys.path.append(FILE.parents[0].as_posix())
 
 LOGGER = logging.getLogger(__name__)
 
@@ -55,7 +49,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     # Hyperparameters
     if isinstance(hyp, str):
         with open(hyp) as f:
-            hyp = yaml.safe_load(f)# load hyps dict
+            hyp = yaml.safe_load(f)  # load hyps dict
     LOGGER.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
 
     # Save run settings
@@ -69,12 +63,10 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     save_interval = opt.save_interval
 
     # Set device to use
-    # TODO: Support Multi GPU
     cuda = device.type != 'cpu'
     epochs = opt.epochs
 
     # Set number of InfoGAN Code
-
     infogan_code = hyp['infogan_code']
     # Loggers
     loggers = {'wandb': None, 'tb': None}  # loggers dict
@@ -82,12 +74,6 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     prefix = colorstr('tensorboard: ')
     LOGGER.info(f"{prefix}Start with 'tensorboard --logdir {opt.project}', view at http://localhost:6006/")
     loggers['tb'] = SummaryWriter(str(save_dir))
-
-    # # Prepare Tensorboard
-    # tb_path = os.path.join('tensorboard', time_stamp)
-    # pathlib.Path(tb_path).mkdir(parents=True, exist_ok=True)
-    # summarywriter = SummaryWriter(log_dir=tb_path)
-    # W&B
 
     run_id = torch.load(weights).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(weights) else None
     run_id = run_id if resume else None  # start fresh run if transfer learning
