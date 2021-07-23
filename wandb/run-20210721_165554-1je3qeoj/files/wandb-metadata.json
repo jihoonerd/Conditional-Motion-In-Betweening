@@ -1,0 +1,24 @@
+{
+    "os": "Linux-4.15.0-147-generic-x86_64-with-debian-buster-sid",
+    "python": "3.7.3",
+    "heartbeatAt": "2021-07-21T07:55:55.674664",
+    "startedAt": "2021-07-21T07:55:54.407642",
+    "docker": null,
+    "gpu": "GeForce GTX 1080",
+    "gpu_count": 1,
+    "cpu_count": 4,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "codePath": "train.py",
+    "program": "train.py",
+    "git": {
+        "remote": "git@github.com:jihoonerd/Motion-In-betweening-with-InfoGAN.git",
+        "commit": "626b3be73b967b24e8a2c016a4892b4f1e5b4e1c"
+    },
+    "email": "yongmin.park@continuumai.co.kr",
+    "root": "/home/taehyun/workspace/rilab/Motion-In-betweening-with-InfoGAN",
+    "host": "taehyun-B250M-DS3H",
+    "username": "taehyun",
+    "executable": "/home/taehyun/anaconda3/bin/python"
+}
