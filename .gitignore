@@ -8,6 +8,10 @@ ubisoft-laforge-animation-dataset/
 tensorboard/
 tb_old/**
 lafan_train*.pkl
+runs/
+tb_old/
+wandb/
+processed_data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -81,11 +85,6 @@ instance/
 
 # Sphinx documentation
 docs/_build/
-# Custom
-runs/
-tb_old/
-wandb/
-processed_data/
 
 # PyBuilder
 target/
