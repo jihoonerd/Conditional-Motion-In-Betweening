@@ -85,6 +85,7 @@ docs/_build/
 runs/
 tb_old/
 wandb/
+processed_data/
 
 # PyBuilder
 target/
