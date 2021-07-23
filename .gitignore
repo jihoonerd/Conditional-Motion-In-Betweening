@@ -81,6 +81,10 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+# Custom
+runs/
+tb_old/
+wandb/
 
 # PyBuilder
 target/
