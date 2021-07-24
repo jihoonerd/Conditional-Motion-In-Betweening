@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn.modules.activation import ReLU
 from rmi.model.plu import PLU
+import torch.nn.functional as F
 
 
 class InputEncoder(nn.Module):
@@ -136,3 +137,42 @@ class QDiscriminator(nn.Module):
     def forward(self, x):
         q = self.infogan_q(x)
         return q
+
+
+
+class InfoGANDiscriminator(nn.Module):
+    # refer: 3.5 Motion discriminators, 3.7.2 sliding critics
+    def __init__(self, input_dim=128, hidden_dim=128, discrete_code_dim=4):
+        super().__init__()
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.discrete_code_dim = discrete_code_dim
+
+        self.conv1d_1 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=1)
+        self.conv1d_32 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3, padding=2, dilation=2)
+        self.conv1d_33 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3, padding=3, dilation=3)
+        self.conv1d_35 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3, padding=5, dilation=5)
+        self.conv1d_1x1 = nn.Conv1d(4 * self.hidden_dim, 1, kernel_size=1)
+
+        self.conv_to_gan = nn.Linear(30, 1)
+        self.sigmoid = nn.Sigmoid()
+
+        self.conv_to_infogan = nn.Sequential(
+            nn.Linear(30, 16),
+            nn.ReLU(),
+            nn.Linear(16, self.discrete_code_dim)
+        )
+
+    def forward(self, x):
+        out_conv1d_1 = F.relu(self.conv1d_1(x))
+        out_conv1d_32 = F.relu(self.conv1d_32(x))
+        out_conv1d_33 = F.relu(self.conv1d_33(x))
+        out_conv1d_35 = F.relu(self.conv1d_35(x))
+
+        out = torch.cat([out_conv1d_1, out_conv1d_32, out_conv1d_33, out_conv1d_35], dim=1)
+        conv_out = self.conv1d_1x1(out)
+        gan_out = self.conv_to_gan(conv_out[:,0,:])
+        regular_gan_out = self.sigmoid(gan_out)
+
+        q_discrete = self.conv_to_infogan(conv_out[:,0,:])
+        return regular_gan_out, q_discrete
