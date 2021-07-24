@@ -21,7 +21,7 @@ from tqdm import tqdm
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh, generate_infogan_code
 from rmi.model.network import (Decoder, InfoganCodeEncoder,
-                               InputEncoder, LSTMNetwork, InfoGANDiscriminator)
+                               InfoGANDiscriminator, InputEncoder, LSTMNetwork)
 from rmi.model.positional_encoding import PositionalEncoding
 from utils.general import check_file, colorstr, get_latest_run, increment_path
 from utils.torch_utils import de_parallel, intersect_dicts, select_device
@@ -557,9 +557,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                     'infogan_discriminator': infogan_discriminator.state_dict(),
                     'wandb_id': wandb_logger.wandb_run.id if loggers['wandb'] else None}
 
-            # Save last, best and delete
-            # TODO: FIx saving dir
-            torch.save(ckpt, 'train-'+str(epoch)+'.pt')
+            if (epoch % save_interval) == 0:
+                torch.save(ckpt, os.path.join(wdir, f'train-{epoch}.pt'))
             if loggers['wandb']:
                 if ((epoch + 1) % opt.save_interval == 0 and not epochs) and opt.save_interval != -1:
                     wandb_logger.log_model(last.parent, opt, epoch)
