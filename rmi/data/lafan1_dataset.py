@@ -30,10 +30,10 @@ class LAFAN1Dataset(Dataset):
         self.max_transition_length = max_transition_length
 
         self.device = device
-        if  "processed_data.pkl" in os.listdir(processed_data_dir):
+        if "processed_data.pkl" in os.listdir(processed_data_dir):
             with open(os.path.join(processed_data_dir,'processed_data.pkl'), 'rb') as f:
                 self.data = pickle.load(f)
-        else : 
+        else: 
             self.data = self.load_lafan()  # Call this last
             with open(os.path.join(processed_data_dir,'processed_data.pkl'), 'wb') as f:
                 pickle.dump(self.data, f, pickle.HIGHEST_PROTOCOL)
@@ -87,6 +87,8 @@ class LAFAN1Dataset(Dataset):
         input_data["global_pos"] = global_pos[
             :, :, :, :
         ]  # global position (N, 50, 22, 30) why not just global_pos
+
+        input_data["global_pos_std"] = self.global_pos_std
         return input_data
 
     def __len__(self):

@@ -1,9 +1,7 @@
 lstm_hidden: 1024
-loss_sp_discriminator_weight: 1.0
 loss_mi_weight: 1.0
-loss_discriminator_weight: 0.1
-loss_sp_generator_weight: 1.0
-loss_generator_weight: 0.1
+loss_discriminator_weight: 1.0
+loss_generator_weight: 1.0
 save_optimizer: False
 optim_beta1: 0.5
 optim_beta2: 0.9
