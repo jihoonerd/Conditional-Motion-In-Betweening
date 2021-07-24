@@ -140,7 +140,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         d_infogan = DInfoGAN(input_dim=30)
         d_infogan.to(device)
         # QInfoGAN
-        q_infogan = QInfoGAN(input_dim=30)
+        q_infogan = QInfoGAN(input_dim=30, discrete_code_dim=infogan_code)
         q_infogan.to(device)
 
         
@@ -547,8 +547,10 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             torch.nn.utils.clip_grad_norm_(state_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(offset_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(target_encoder.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(infogan_code_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(lstm.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(decoder.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(q_infogan.parameters(), 1.0)
             scaler.step(generator_optimizer)
             scaler.update()
         final_epoch = epoch + 1 == epochs
