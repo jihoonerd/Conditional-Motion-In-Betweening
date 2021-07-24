@@ -424,7 +424,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
                     local_q_next = local_q[:,t+1]
                     local_q_next = local_q_next.view(local_q_next.size(0), -1)
-    # Loss
+                    
+                    # Loss
                     pos_next = global_pos[:,t+1]
                     local_q_next = local_q[:,t+1]
                     local_q_next = local_q_next.view(local_q_next.size(0), -1)
@@ -554,33 +555,24 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             scaler.step(generator_optimizer)
             scaler.update()
         final_epoch = epoch + 1 == epochs
-        # Log
-
-
-        tags = ["Train/LOSS/Positional Loss", 
-                "Train/LOSS/Quaternion Loss", 
-                "Train/LOSS/Root Loss", 
-                "Train/LOSS/Contact Loss", 
-                "Train/LOSS/LSTM Discriminator", 
-                "Train/LOSS/LSTM Generator", 
-                "Train/LOSS/Discrete Code", 
-                "Train/LOSS/Total Generator"]  
-        loss_list = [
-            hyp['loss_pos_weight'] * loss_pos,
-            hyp['loss_quat_weight'] * loss_quat,
-            hyp['loss_root_weight'] * loss_root,
-            hyp['loss_contact_weight'] * loss_contact,
-            lstm_d_loss,
-            hyp['loss_generator_weight'] * g_fake_loss,
-            hyp['loss_mi_weight'] * disc_code_loss,
-            loss_total]
-
         
-        for x, tag in zip(loss_list, tags):
+        # Log
+        log_dict = {
+            "Train/LOSS/Positional Loss": hyp['loss_pos_weight'] * loss_pos, 
+            "Train/LOSS/Quaternion Loss": hyp['loss_quat_weight'] * loss_quat, 
+            "Train/LOSS/Root Loss": hyp['loss_root_weight'] * loss_root, 
+            "Train/LOSS/Contact Loss": hyp['loss_contact_weight'] * loss_contact, 
+            "Train/LOSS/LSTM Discriminator": lstm_d_loss, 
+            "Train/LOSS/LSTM Generator": hyp['loss_generator_weight'] * g_fake_loss, 
+            "Train/LOSS/Discrete Code": hyp['loss_mi_weight'] * disc_code_loss, 
+            "Train/LOSS/Total Generator": loss_total,
+        }
+
+        for k, v in log_dict.items():
             if loggers['tb']:
-                loggers['tb'].add_scalar(tag, x, epoch)
+                loggers['tb'].add_scalar(k, v, epoch)
             if loggers['wandb']:
-                wandb_logger.log({tag: x}) 
+                wandb_logger.log({k: v})
         wandb_logger.end_epoch()
 
         # Save model
