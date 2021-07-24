@@ -516,7 +516,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 if epoch >= hyp['gan_start_epoch']:
                     info_gen_fake_gan_out = infogan_discriminator(single_pose_fake_input)[:,0,:]
                     info_gen_fake_d_out = d_infogan(info_gen_fake_gan_out)
-                    info_gen_fake_loss = torch.mean((info_gen_fake_d_out - 1) ** 2)
+                    info_gen_fake_loss = torch.mean((info_gen_fake_d_out - 1) ** 2) / 2.0
 
                     info_gen_fake_q_out = q_infogan(info_gen_fake_gan_out)
                     info_gen_code_loss = infogan_disc_code_loss(info_gen_fake_q_out, fake_indices)
