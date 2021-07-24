@@ -154,25 +154,45 @@ class InfoGANDiscriminator(nn.Module):
         self.conv1d_35 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3, padding=5, dilation=5)
         self.conv1d_1x1 = nn.Conv1d(4 * self.hidden_dim, 1, kernel_size=1)
 
-        self.conv_to_gan = nn.Linear(30, 1)
-        self.sigmoid = nn.Sigmoid()
-
-        self.conv_to_infogan = nn.Sequential(
-            nn.Linear(30, 16),
-            nn.ReLU(),
-            nn.Linear(16, self.discrete_code_dim)
-        )
-
     def forward(self, x):
         out_conv1d_1 = F.relu(self.conv1d_1(x))
         out_conv1d_32 = F.relu(self.conv1d_32(x))
         out_conv1d_33 = F.relu(self.conv1d_33(x))
         out_conv1d_35 = F.relu(self.conv1d_35(x))
 
-        out = torch.cat([out_conv1d_1, out_conv1d_32, out_conv1d_33, out_conv1d_35], dim=1)
-        conv_out = self.conv1d_1x1(out)
-        gan_out = self.conv_to_gan(conv_out[:,0,:])
-        regular_gan_out = self.sigmoid(gan_out)
+        conv_out = torch.cat([out_conv1d_1, out_conv1d_32, out_conv1d_33, out_conv1d_35], dim=1)
+        out = self.conv1d_1x1(conv_out)
+        return out
 
-        q_discrete = self.conv_to_infogan(conv_out[:,0,:])
-        return regular_gan_out, q_discrete
+
+class DInfoGAN(nn.Module):
+    def __init__(self, input_dim=30):
+        super().__init__()
+        self.input_dim = input_dim
+
+        self.conv_to_gan = nn.Sequential(
+            nn.Linear(input_dim, 16),
+            nn.ReLU(),
+            nn.Linear(16, 1)
+        )
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        out = self.conv_to_gan(x)
+        out = self.sigmoid(out)
+        return out
+
+class QInfoGAN(nn.Module):
+    def __init__(self, input_dim=30, discrete_code_dim=4):
+        super().__init__()
+        self.input_dim = input_dim
+        self.discrete_code_dim = discrete_code_dim
+
+        self.conv_to_infogan = nn.Sequential(
+            nn.Linear(input_dim, 16),
+            nn.ReLU(),
+            nn.Linear(16, self.discrete_code_dim)
+        )
+    def forward(self, x):
+        q_discrete = self.conv_to_infogan(x)
+        return q_discrete

@@ -4,6 +4,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Dict
 
 import numpy as np
 import torch
@@ -20,7 +21,7 @@ from tqdm import tqdm
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh, generate_infogan_code
-from rmi.model.network import (Decoder, InfoganCodeEncoder,
+from rmi.model.network import (Decoder, InfoganCodeEncoder, DInfoGAN, QInfoGAN,
                                InfoGANDiscriminator, InputEncoder, LSTMNetwork)
 from rmi.model.positional_encoding import PositionalEncoding
 from utils.general import check_file, colorstr, get_latest_run, increment_path
@@ -134,6 +135,14 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         discriminator_in = 277
         infogan_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code)
         infogan_discriminator.to(device)
+
+        # DInfoGAN
+        d_infogan = DInfoGAN(input_dim=30)
+        d_infogan.to(device)
+        # QInfoGAN
+        q_infogan = QInfoGAN(input_dim=30)
+        q_infogan.to(device)
+
         
         #exclude 
         exclude = []
@@ -167,6 +176,14 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         state_infogan_discriminator = intersect_dicts(state_infogan_discriminator, infogan_discriminator.state_dict(), exclude=exclude)
         infogan_discriminator.load_state_dict(state_infogan_discriminator, strict=False)
 
+        state_d_infogan = ckpt['d_infogan'].float().state_dict()
+        state_d_infogan = intersect_dicts(state_d_infogan, d_infogan.state_dict(), exclude=exclude)
+        d_infogan.load_state_dict(state_d_infogan, strict=False)
+
+        state_q_infogan = ckpt['q_infogan'].float().state_dict()
+        state_q_infogan = intersect_dicts(state_q_infogan, q_infogan.state_dict(), exclude=exclude)
+        q_infogan.load_state_dict(state_q_infogan, strict=False)
+
     else : 
         # Initializing networks
         state_in = root_v_dim + local_q_dim + contact_dim
@@ -199,6 +216,13 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         discriminator_in = 277
         infogan_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code)
         infogan_discriminator.to(device)
+
+        # DInfoGAN
+        d_infogan = DInfoGAN(input_dim=30)
+        d_infogan.to(device)
+        # QInfoGAN
+        q_infogan = QInfoGAN(input_dim=30, discrete_code_dim=infogan_code)
+        q_infogan.to(device)
 
     infogan_disc_code_loss = nn.CrossEntropyLoss()
 
@@ -239,14 +263,16 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     generator_optimizer = Adam(params=list(state_encoder.parameters()) + 
                                       list(offset_encoder.parameters()) + 
                                       list(target_encoder.parameters()) +
+                                      list(infogan_code_encoder.parameters()) +
                                       list(lstm.parameters()) +
                                       list(decoder.parameters()) + 
-                                      list(infogan_code_encoder.parameters()),
+                                      list(q_infogan.parameters()),
                                 lr=hyp['generator_learning_rate'],
                                 betas=(hyp['optim_beta1'], hyp['optim_beta2']),
                                 amsgrad=True)
 
-    discriminator_optimizer = Adam(params=list(infogan_discriminator.parameters()),
+    discriminator_optimizer = Adam(params=list(infogan_discriminator.parameters()) +
+                                          list(d_infogan.parameters()),
                                     lr=hyp['discriminator_learning_rate'],
                                     betas=(hyp['optim_beta1'], hyp['optim_beta2']),
                                     amsgrad=True)
@@ -469,14 +495,13 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 if epoch >= hyp['gan_start_epoch']:
                     ## Adversarial Discriminator
                     discriminator_optimizer.zero_grad()
-                    infogan_disc_fake_gan_out, _ = infogan_discriminator(single_pose_fake_input.detach())
-                    infogan_disc_fake_gan_score = torch.mean(infogan_disc_fake_gan_out)
+                    infogan_disc_fake_gan_out = infogan_discriminator(single_pose_fake_input.detach())[:,0,:]
+                    infogan_disc_fake_d_out = d_infogan(infogan_disc_fake_gan_out)
+                    info_disc_fake_loss = torch.mean((infogan_disc_fake_d_out) ** 2)
 
-                    infogan_disc_real_gan_out, _ = infogan_discriminator(single_pose_real_input.detach())
-                    infogan_disc_real_gan_score = torch.mean(infogan_disc_real_gan_out)
-
-                    info_disc_fake_loss = torch.mean((infogan_disc_fake_gan_score) ** 2)  
-                    info_disc_real_loss = torch.mean((infogan_disc_real_gan_score -  1) ** 2)
+                    infogan_disc_real_gan_out = infogan_discriminator(single_pose_real_input)[:,0,:]
+                    infogan_disc_real_d_out = d_infogan(infogan_disc_real_gan_out)
+                    info_disc_real_loss = torch.mean((infogan_disc_real_d_out -  1) ** 2)
 
                     info_d_loss = hyp['loss_discriminator_weight'] * (info_disc_fake_loss + info_disc_real_loss) / 2.0
 
@@ -489,10 +514,12 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
                 ### Score fake data treated as real (->1)
                 if epoch >= hyp['gan_start_epoch']:
-                    info_gen_fake_gan_out, info_gen_fake_q_discrete = infogan_discriminator(single_pose_fake_input)
-                    info_gen_fake_gan_score = torch.mean(info_gen_fake_gan_out)
-                    info_gen_fake_loss = torch.mean((info_gen_fake_gan_score - 1) ** 2)
-                    info_gen_code_loss = infogan_disc_code_loss(info_gen_fake_q_discrete, fake_indices)
+                    info_gen_fake_gan_out = infogan_discriminator(single_pose_fake_input)[:,0,:]
+                    info_gen_fake_d_out = d_infogan(info_gen_fake_gan_out)
+                    info_gen_fake_loss = torch.mean((info_gen_fake_d_out - 1) ** 2)
+
+                    info_gen_fake_q_out = q_infogan(info_gen_fake_gan_out)
+                    info_gen_code_loss = infogan_disc_code_loss(info_gen_fake_q_out, fake_indices)
                 
                 else:
                     info_gen_fake_loss = 0
