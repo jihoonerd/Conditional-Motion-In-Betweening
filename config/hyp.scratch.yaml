@@ -1,5 +1,5 @@
 lstm_hidden: 1024
-loss_mi_weight: 0.5
+loss_mi_weight: 1.0
 loss_discriminator_weight: 1.0
 loss_generator_weight: 1.0
 save_optimizer: False

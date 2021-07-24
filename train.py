@@ -582,6 +582,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                     'lstm': lstm.state_dict(),
                     'decoder': decoder.state_dict(),
                     'infogan_discriminator': infogan_discriminator.state_dict(),
+                    'q_infogan': q_infogan.state_dict(),
+                    'd_infogan': d_infogan.state_dict(),
                     'wandb_id': wandb_logger.wandb_run.id if loggers['wandb'] else None}
 
             if (epoch % save_interval) == 0:
