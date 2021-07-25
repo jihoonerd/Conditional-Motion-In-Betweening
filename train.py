@@ -158,8 +158,10 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         state_dict_offset_encoder = intersect_dicts(state_dict_offset_encoder, offset_encoder.state_dict(), exclude=exclude)  
         offset_encoder.load_state_dict(state_dict_offset_encoder, strict=False)  
 
-        # TODO: Load InfoganCodeEncoder
-        
+        state_dict_infogan_code_encoder = ckpt['state_dict_infogan_code_encoder'].float().state_dict()
+        state_dict_infogan_code_encoder = intersect_dicts(state_dict_infogan_code_encoder, infogan_code_encoder.state_dict(), exclude=exclude)
+        infogan_code_encoder.load_state_dict(state_dict_infogan_code_encoder, strict=False) 
+
         state_dict_lstm = ckpt['lstm'].float().state_dict()  
         state_dict_lstm = intersect_dicts(state_dict_lstm, lstm.state_dict(), exclude=exclude)  
         lstm.load_state_dict(state_dict_lstm, strict=False)  
@@ -168,7 +170,21 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         state_dict_decoder = intersect_dicts(state_dict_decoder, decoder.state_dict(), exclude=exclude)  
         decoder.load_state_dict(state_dict_decoder, strict=False)  
         
-        # TODO: Load newly added network.
+        state_dict_lstm_discriminator = ckpt['lstm_discriminator'].float().state_dict()
+        state_dict_lstm_discriminator = intersect_dicts(state_dict_lstm_discriminator, lstm_discriminator.state_dict(), exclude=exclude)
+        lstm_discriminator.load_state_dict(state_dict_lstm_discriminator, strict=False)
+        
+        state_dict_lstm_extractor = ckpt['lstm_extractor'].float().state_dict()
+        state_dict_lstm_extractor = intersect_dicts(state_dict_lstm_extractor, lstm_extractor.state_dict(), exclude=exclude)
+        lstm_extractor.load_state_dict(state_dict_lstm_extractor, strict=False)
+        
+        state_dict_n_discriminator = ckpt['n_discriminator'].float().state_dict()
+        state_dict_n_discriminator = intersect_dicts(state_dict_n_discriminator, n_discriminator.state_dict(), exclude=exclude)
+        n_discriminator.load_state_dict(state_dict_n_discriminator, strict=False)
+
+        state_dict_q_discriminator = ckpt['q_discriminator'].float().state_dict()
+        state_dict_q_discriminator = intersect_dicts(state_dict_q_discriminator, q_discriminator.state_dict(), exclude=exclude)
+        q_discriminator.load_state_dict(state_dict_q_discriminator, strict=False)
 
         # LOGGER.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
     else : 
@@ -233,6 +249,11 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         if any(x in k for x in freeze):
             print('freezing %s' % k)
             v.requires_grad = False
+    for k, v in infogan_code_encoder.named_parameters():
+        v.requires_grad = True  # train all layers
+        if any(x in k for x in freeze):
+            print('freezing %s' % k)
+            v.requires_grad = False            
     for k, v in lstm.named_parameters():
         v.requires_grad = True  # train all layers
         if any(x in k for x in freeze):
@@ -243,7 +264,29 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         if any(x in k for x in freeze):
             print('freezing %s' % k)
             v.requires_grad = False
-    # TODO: For LSTM Discriminator + newly added network
+    for k, v in lstm_discriminator.named_parameters():
+        v.requires_grad = True  # train all layers
+        if any(x in k for x in freeze):
+            print('freezing %s' % k)
+            v.requires_grad = False
+    for k, v in lstm_extractor.named_parameters():
+        v.requires_grad = True  # train all layers
+        if any(x in k for x in freeze):
+            print('freezing %s' % k)
+            v.requires_grad = False
+    for k, v in n_discriminator.named_parameters():
+        v.requires_grad = True  # train all layers
+        if any(x in k for x in freeze):
+            print('freezing %s' % k)
+            v.requires_grad = False
+    for k, v in q_discriminator.named_parameters():
+        v.requires_grad = True  # train all layers
+        if any(x in k for x in freeze):
+            print('freezing %s' % k)
+            v.requires_grad = False
+ 
+
+
 
     # Try amsgrad True / False 
     # https://tgd.kr/c/deeplearning/19860071
@@ -590,14 +633,17 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                     'state_encoder': state_encoder.state_dict(),
                     'target_encoder': target_encoder.state_dict(),
                     'offset_encoder': offset_encoder.state_dict(),
+                    'infogan_code_encoder': infogan_code_encoder.state_dict(),
                     'lstm': lstm.state_dict(),
                     'decoder': decoder.state_dict(),
                     'lstm_discriminator': lstm_discriminator.state_dict(),
+                    'lstm_extractor': lstm_extractor.state_dict(),
+                    'n_discriminator': n_discriminator.state_dict(),
+                    'q_discriminator': q_discriminator.state_dict(),
                     'wandb_id': wandb_logger.wandb_run.id if loggers['wandb'] else None}
 
             # Save last, best and delete
-            # TODO: FIx saving dir
-            torch.save(ckpt, 'train-'+str(epoch)+'.pt')
+            torch.save(ckpt, str(last.parent)+'train-'+str(epoch)+'.pt')
             if loggers['wandb']:
                 if ((epoch + 1) % opt.save_interval == 0 and not epochs) and opt.save_interval != -1:
                     wandb_logger.log_model(last.parent, opt, epoch)
