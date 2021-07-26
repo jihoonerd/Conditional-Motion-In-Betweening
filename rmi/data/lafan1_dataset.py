@@ -87,6 +87,8 @@ class LAFAN1Dataset(Dataset):
         input_data["global_pos"] = global_pos[
             :, :, :, :
         ]  # global position (N, 50, 22, 30) why not just global_pos
+        input_data["global_pos_std"] = self.global_pos_std
+
         return input_data
 
     def __len__(self):
