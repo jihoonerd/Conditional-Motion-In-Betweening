@@ -225,9 +225,8 @@ def test(opt,
                 if opt.plot:
                     plot_pose(start_pose, in_between_pose, target_pose, t,  skeleton, pred=True)
                     plot_pose(start_pose, in_between_true, target_pose, t,  skeleton, pred=False)
-
-                    img_path = os.path.join(save_dir, 'results/tmp/')
                     Path(img_path).mkdir(parents=True, exist_ok=True)
+                    img_path = os.path.join(save_dir, 'results/tmp/')
 
                     pred_img = Image.open(img_path +'pred_'+str(t)+'.png', 'r')
                     gt_img = Image.open(img_path+ 'gt_'+str(t)+'.png', 'r')
