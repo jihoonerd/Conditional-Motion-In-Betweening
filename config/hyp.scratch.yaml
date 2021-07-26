@@ -5,12 +5,12 @@ loss_generator_weight: 1.0
 save_optimizer: False
 optim_beta1: 0.5
 optim_beta2: 0.9
-infogan_code: 2
+infogan_code: 10
 pdist_scale: 10
 discriminator_learning_rate: 0.0001
 generator_learning_rate: 0.001
 teacher_forcing: 0
-gan_start_epoch: 0
+gan_start_epoch: 900
 
 loss_pos_weight: 0.5
 loss_quat_weight: 1.0

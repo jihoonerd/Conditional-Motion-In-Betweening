@@ -523,6 +523,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 
                 else:
                     info_gen_fake_loss = 0
+                    info_gen_code_loss = 0
                     
 
                 total_g_loss =  hyp['loss_pos_weight'] * loss_pos + \
