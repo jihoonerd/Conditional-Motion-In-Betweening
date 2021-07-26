@@ -1,41 +1,30 @@
 import argparse
 import os
 from pathlib import Path
-from datetime import datetime
 
 import imageio
 import numpy as np
 import torch
-import yaml
 from kpt.model.skeleton import TorchSkeleton
 from PIL import Image
 from pymo.parsers import BVHParser
 from torch.utils.data import DataLoader
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
-from rmi.data.utils import write_json, generate_infogan_code
+from rmi.data.utils import generate_infogan_code, write_json
 from rmi.model.network import (Decoder, Discriminator, InfoganCodeEncoder,
                                InputEncoder, LSTMNetwork, NDiscriminator,
                                QDiscriminator)
+from rmi.model.positional_encoding import PositionalEncoding
+from rmi.vis.pose import plot_pose
 from utils.general import increment_path
 from utils.torch_utils import select_device
 
-from rmi.model.positional_encoding import PositionalEncoding
-from rmi.vis.pose import plot_pose
-from mpl_toolkits.mplot3d import Axes3D
 
+def test(opt, device):
 
-def test(opt,
-          device,
-          ):
-
-    save_dir,  pretrained_weights, data_path = opt.save_dir, opt.pretrained_weights, opt.data_path
-    # Load configuration from yaml
-
-    # Set device to use
-    
+    save_dir, pretrained_weights, data_path = opt.save_dir, opt.pretrained_weights, opt.data_path    
     device = torch.device("cpu")
-
 
     infogan_code = opt.infogan_code
     conditioning_code = opt.conditioning_code
@@ -223,10 +212,10 @@ def test(opt,
                 write_json(filename=os.path.join(pose_path, f'{t:05}.json'), local_q=local_q_pred_t, root_pos=root_pred_t, joint_names=skeleton.joints)
 
                 if opt.plot:
-                    plot_pose(start_pose, in_between_pose, target_pose, t,  skeleton, pred=True)
-                    plot_pose(start_pose, in_between_true, target_pose, t,  skeleton, pred=False)
-                    Path(img_path).mkdir(parents=True, exist_ok=True)
+                    plot_pose(start_pose, in_between_pose, target_pose, t, skeleton, save_dir=save_dir, pred=True)
+                    plot_pose(start_pose, in_between_true, target_pose, t, skeleton, save_dir=save_dir, pred=False)
                     img_path = os.path.join(save_dir, 'results/tmp/')
+                    Path(img_path).mkdir(parents=True, exist_ok=True)
 
                     pred_img = Image.open(img_path +'pred_'+str(t)+'.png', 'r')
                     gt_img = Image.open(img_path+ 'gt_'+str(t)+'.png', 'r')
@@ -243,21 +232,20 @@ def test(opt,
 
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--pretrained_weights', type=str, default='weightstrain-9.pt', help='load weight .pt')
+    parser.add_argument('--pretrained_weights', type=str, default=None, help='load weight .pt')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='dataset path')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data/', help='dataset path')
-    parser.add_argument('--batch-size', type=int, default=64, help='total batch size for all GPUs')
+    parser.add_argument('--batch_size', type=int, default=64, help='total batch size for all GPUs')
     parser.add_argument('--lstm_hidden', type=int, default=1024, help='total batch size for all GPUs')
     parser.add_argument('--num_gifs', type=int, default=30, help='total batch size for all GPUs')
     parser.add_argument('--training_frames', type=int, default=30, help='total batch size for all GPUs')
     parser.add_argument('--inference_batch_index', type=int, default=20, help='total batch size for all GPUs')
     parser.add_argument('--infogan_code', type=int, default=2, help='total batch size for all GPUs')
     parser.add_argument('--conditioning_code', type=int, default=1, help='total batch size for all GPUs')
-    parser.add_argument('--plot', type=bool, default=True, help='resume most recent training')
+    parser.add_argument('--plot', type=bool, default=True, help='plot motion images')
     parser.add_argument('--data_loader_workers', type=int, default=4, help='data_loader_workers')
-    parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
-    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--project', default='runs/test', help='save to project/name')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
@@ -266,11 +254,9 @@ def parse_opt(known=False):
     return opt
 
 def main(opt):
-    # Resume
     opt.exp_name = opt.exp_name
     opt.save_dir = str(increment_path(Path(opt.project) / opt.exp_name, exist_ok=opt.exist_ok))
     device = select_device(opt.device, batch_size=opt.batch_size)
-
     test(opt, device)
 
 
@@ -280,7 +266,6 @@ def run(**kwargs):
     for k, v in kwargs.items():
         setattr(opt, k, v)
     main(opt)
-
 
 if __name__ == "__main__":
     opt = parse_opt()

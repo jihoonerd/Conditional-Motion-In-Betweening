@@ -12,6 +12,7 @@ runs/
 tb_old/
 wandb/
 processed_data/
+run_training.sh
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
