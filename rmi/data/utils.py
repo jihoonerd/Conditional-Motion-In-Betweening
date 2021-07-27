@@ -6,13 +6,18 @@ import torch
 from rmi.data.quaternion import euler_to_quaternion, qeuler_np
 
 
-def generate_infogan_code(batch_size, discrete_code_dim, device):
+def generate_infogan_code(batch_size, discrete_code_dim, continuous_code_dim, device):
     """Generate discrete infogan latent code to given input data"""
 
     if discrete_code_dim != 0:
         label_idx = torch.randint(low=0, high=discrete_code_dim, size=(batch_size,), device=device)
         discrete_code = torch.nn.functional.one_hot(label_idx, num_classes=discrete_code_dim)
-    return discrete_code, label_idx
+
+    if continuous_code_dim != 0:
+        continuous_code = torch.rand(batch_size, continuous_code_dim, device=device) * 2 - 1
+
+    return_code = torch.cat([discrete_code, continuous_code], dim=1)
+    return return_code, label_idx
 
 
 def append_infogan_code(input_data, discrete_code_dim, device):
