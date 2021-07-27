@@ -205,12 +205,11 @@ class QInfoGAN(nn.Module):
             nn.ReLU(),
             nn.Linear(input_dim, self.continuous_code_dim)
         )
-        self.softplus = nn.Softplus()
 
 
     def forward(self, x):
         q_discrete = self.conv_to_infogan_discrete(x)
 
         mu = self.conv_to_infogan_continuous_mu(x)
-        var = self.softplus(self.conv_to_infogan_continuous_var(x))
+        var = torch.exp(self.conv_to_infogan_continuous_var(x))
         return q_discrete, mu, var
