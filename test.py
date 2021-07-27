@@ -12,9 +12,9 @@ from torch.utils.data import DataLoader
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import generate_infogan_code, write_json
-from rmi.model.network import (Decoder, Discriminator, InfoganCodeEncoder,
-                               InputEncoder, LSTMNetwork, NDiscriminator,
-                               QDiscriminator)
+from rmi.model.network import (Decoder, InfoGANDiscriminator, InfoganCodeEncoder,
+                               InputEncoder, LSTMNetwork, DInfoGAN,
+                               QInfoGAN)
 from rmi.model.positional_encoding import PositionalEncoding
 from rmi.vis.pose import plot_pose
 from utils.general import increment_path
@@ -34,7 +34,8 @@ def test(opt, device):
     parsed = BVHParser().parse(opt.skeleton_path)
     skeleton = TorchSkeleton(skeleton=parsed.skeleton, root_name='Hips', device=device)
 
-     # Load and preprocess data. It utilizes LAFAN1 utilities
+    # Load and preprocess data. It utilizes LAFAN1 utilities
+    Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
     lafan_dataset_test = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=False, start_seq_length=30, cur_seq_length=30, max_transition_length=30, device=device)
     lafan_data_loader_test = DataLoader(lafan_dataset_test, batch_size=opt.batch_size, shuffle=False, num_workers=opt.data_loader_workers)
 
@@ -46,7 +47,7 @@ def test(opt, device):
     contact_dim = lafan_dataset_test.contact_dim
 
     # Initializing networks
-    ckpt = torch.load(pretrained_weights)
+    ckpt = torch.load(pretrained_weights, map_location=torch.device(device))
     # Initializing networks
     state_in = root_v_dim + local_q_dim + contact_dim
     offset_in = root_v_dim + local_q_dim
@@ -73,6 +74,18 @@ def test(opt, device):
     decoder = Decoder(input_dim=lstm_hidden, out_dim=state_in)
     decoder.to(device)
 
+    # Discriminator
+    discriminator_in = 277
+    infogan_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code)
+    infogan_discriminator.to(device)
+
+    # DInfoGAN
+    d_infogan = DInfoGAN(input_dim=30)
+    d_infogan.to(device)
+    # QInfoGAN
+    q_infogan = QInfoGAN(input_dim=30, discrete_code_dim=infogan_code)
+    q_infogan.to(device)
+
     #Load to FP32
     state_dict_state_encoder = ckpt['state_encoder']
     state_encoder.load_state_dict(state_dict_state_encoder)  
@@ -90,7 +103,17 @@ def test(opt, device):
     lstm.load_state_dict(state_dict_lstm)  
 
     state_dict_decoder = ckpt['decoder']
-    decoder.load_state_dict(state_dict_decoder)  
+    decoder.load_state_dict(state_dict_decoder)
+
+    state_infogan_discriminator = ckpt['infogan_discriminator']
+    infogan_discriminator.load_state_dict(state_infogan_discriminator)
+
+    state_d_infogan = ckpt['d_infogan']
+    d_infogan.load_state_dict(state_d_infogan)
+
+    state_q_infogan = ckpt['q_infogan']
+    q_infogan.load_state_dict(state_q_infogan)
+
 
     pe = PositionalEncoding(dimension=256, max_len=lafan_dataset_test.max_transition_length)
 

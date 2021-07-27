@@ -212,7 +212,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         decoder = Decoder(input_dim=lstm_hidden, out_dim=state_in)
         decoder.to(device)
 
-        # LSTM Discriminator
+        # Discriminator
         discriminator_in = 277
         infogan_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code)
         infogan_discriminator.to(device)
