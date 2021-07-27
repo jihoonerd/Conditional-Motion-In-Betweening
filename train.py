@@ -246,6 +246,11 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         if any(x in k for x in freeze):
             print('freezing %s' % k)
             v.requires_grad = False
+    for k, v in infogan_code_encoder.named_parameters():
+        v.requires_grad = True  # train all layers
+        if any(x in k for x in freeze):
+            print('freezing %s' % k)
+            v.requires_grad = False            
     for k, v in lstm.named_parameters():
         v.requires_grad = True  # train all layers
         if any(x in k for x in freeze):
@@ -256,7 +261,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         if any(x in k for x in freeze):
             print('freezing %s' % k)
             v.requires_grad = False
-    # TODO: For LSTM Discriminator + newly added network
+
+
 
     # Try amsgrad True / False 
     # https://tgd.kr/c/deeplearning/19860071

@@ -6,7 +6,7 @@ import numpy as np
 
 
 def plot_pose(
-    start_pose, inbetween_pose, target_pose, frame_idx, time_stamp, skeleton, pred=True
+    start_pose, inbetween_pose, target_pose, frame_idx, skeleton, save_dir, pred=True
 ):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
@@ -75,7 +75,7 @@ def plot_pose(
     title = f"Generated: {frame_idx}" if pred else f"Ground Truth {frame_idx}"
     plt.title(title)
     prefix = "pred_" if pred else "gt_"
-    plot_tmp_dir = os.path.join("results", time_stamp, "tmp")
+    plot_tmp_dir = os.path.join(save_dir, "results", "tmp")
     pathlib.Path(plot_tmp_dir).mkdir(parents=True, exist_ok=True)
     plt.savefig(os.path.join(plot_tmp_dir, prefix + str(frame_idx) + ".png"), dpi=200)
     plt.close()
