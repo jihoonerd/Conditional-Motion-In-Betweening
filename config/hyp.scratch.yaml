@@ -5,7 +5,7 @@ loss_generator_weight: 1.0
 save_optimizer: False
 optim_beta1: 0.5
 optim_beta2: 0.9
-infogan_cont_code: 10
+infogan_cont_code: 5
 infogan_disc_code: 10
 discriminator_learning_rate: 0.0001
 generator_learning_rate: 0.001
