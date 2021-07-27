@@ -486,13 +486,13 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
                 current_root = torch.stack(root_p_cur_list, -1)
                 current_real_root = torch.stack(real_root_cur_list, -1)
-                current_real_root_noise = real_root_noise_dist.sample((current_real_root.shape[0], 30)).permute(0,2,1)
-                current_real_root += current_real_root_noise
+                # current_real_root_noise = real_root_noise_dist.sample((current_real_root.shape[0], 30)).permute(0,2,1)
+                # current_real_root += current_real_root_noise
 
                 current_quaternion = torch.stack(local_q_cur_list, -1)
                 current_real_quaternion = torch.stack(real_q_cur_list, -1)
-                current_real_quaternion_noise = torch.clamp(real_quaternion_noise_dist.sample((current_real_root.shape[0], 30)).permute(0,2,1), min=-1, max=1)
-                current_real_quaternion += current_real_quaternion_noise
+                # current_real_quaternion_noise = torch.clamp(real_quaternion_noise_dist.sample((current_real_root.shape[0], 30)).permute(0,2,1), min=-1, max=1)
+                # current_real_quaternion += current_real_quaternion_noise
 
                 current_contact = torch.stack(contact_cur_list, -1)
                 current_real_contact = torch.stack(real_contact_cur_list, -1)
