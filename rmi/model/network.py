@@ -147,7 +147,7 @@ class InfoGANDiscriminator(nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
 
-        self.conv1d_1 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=1)
+        self.conv1d_1 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=1, padding=0, dilation=1)
         self.conv1d_32 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3, padding=2, dilation=2)
         self.conv1d_33 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3, padding=3, dilation=3)
         self.conv1d_35 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3, padding=5, dilation=5)

@@ -503,15 +503,15 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 if epoch >= hyp['gan_start_epoch']:
                     ## Adversarial Discriminator
                     discriminator_optimizer.zero_grad()
-                    infogan_disc_fake_gan_out = infogan_discriminator(single_pose_fake_input.detach())[:,0,:]
+                    infogan_disc_fake_gan_out = infogan_discriminator(single_pose_fake_input.detach()).squeeze()
                     infogan_disc_fake_d_out = d_infogan(infogan_disc_fake_gan_out)
                     info_disc_fake_loss = torch.mean((infogan_disc_fake_d_out) ** 2)
 
-                    infogan_disc_real_gan_out = infogan_discriminator(single_pose_real_input)[:,0,:]
+                    infogan_disc_real_gan_out = infogan_discriminator(single_pose_real_input).squeeze()
                     infogan_disc_real_d_out = d_infogan(infogan_disc_real_gan_out)
                     info_disc_real_loss = torch.mean((infogan_disc_real_d_out -  1) ** 2)
 
-                    info_d_loss = hyp['loss_discriminator_weight'] * (info_disc_fake_loss + info_disc_real_loss) / 2.0
+                    info_d_loss = (info_disc_fake_loss + info_disc_real_loss) / 2.0
 
                 else:
                     info_d_loss = 0
@@ -522,7 +522,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
                 ### Score fake data treated as real (->1)
                 if epoch >= hyp['gan_start_epoch']:
-                    info_gen_fake_gan_out = infogan_discriminator(single_pose_fake_input)[:,0,:]
+                    info_gen_fake_gan_out = infogan_discriminator(single_pose_fake_input).squeeze()
                     info_gen_fake_d_out = d_infogan(info_gen_fake_gan_out)
                     info_gen_fake_loss = torch.mean((info_gen_fake_d_out - 1) ** 2)
 
@@ -531,10 +531,10 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                     info_gen_code_loss_d = infogan_disc_code_loss(info_gen_fake_q_out, fake_indices)
                     info_gen_code_loss_c = infogan_cont_code_loss(infogan_code_gen[:, infogan_disc_code:], info_gen_fake_q_mu, info_gen_fake_q_var)
 
-                
                 else:
                     info_gen_fake_loss = 0
-                    info_gen_code_loss = 0
+                    info_gen_code_loss_d = 0
+                    info_gen_code_loss_c = 0
                     
 
                 total_g_loss =  hyp['loss_pos_weight'] * loss_pos + \
@@ -544,16 +544,15 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                 hyp['loss_generator_weight'] * info_gen_fake_loss + \
                                 hyp['loss_mi_weight'] * (info_gen_code_loss_d + info_gen_code_loss_c)
             
-                loss_total = total_g_loss
-
             # TOTAL LOSS
             if epoch >= hyp['gan_start_epoch']:
                 discriminator_optimizer.zero_grad()
-                scaler.scale(info_d_loss).backward()
+                total_d_loss = hyp['loss_discriminator_weight'] * info_d_loss
+                scaler.scale(total_d_loss).backward()
                 scaler.step(discriminator_optimizer)
 
             generator_optimizer.zero_grad()
-            scaler.scale(loss_total).backward()
+            scaler.scale(total_g_loss).backward()
             # Gradient clipping for training stability
             scaler.unscale_(generator_optimizer)
             torch.nn.utils.clip_grad_norm_(state_encoder.parameters(), 1.0)
@@ -573,10 +572,11 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             "Train/LOSS/Quaternion Loss": hyp['loss_quat_weight'] * loss_quat, 
             "Train/LOSS/Root Loss": hyp['loss_root_weight'] * loss_root, 
             "Train/LOSS/Contact Loss": hyp['loss_contact_weight'] * loss_contact, 
-            "Train/LOSS/InfoGAN Discriminator": info_d_loss, 
-            "Train/LOSS/InfoGAN Generator": hyp['loss_generator_weight'] * info_gen_fake_loss, 
-            "Train/LOSS/Discrete Code": hyp['loss_mi_weight'] * (info_gen_code_loss_d + info_gen_code_loss_c), 
-            "Train/LOSS/Total Generator": loss_total,
+            "Train/LOSS/InfoGAN Discriminator": hyp['loss_discriminator_weight'] * info_d_loss, 
+            "Train/LOSS/InfoGAN Generator": hyp['loss_generator_weight'] * info_gen_fake_loss,
+            "Train/LOSS/Discrete Code": hyp['loss_mi_weight'] * info_gen_code_loss_d,
+            "Train/LOSS/Continuous Code": hyp['loss_mi_weight'] * info_gen_code_loss_c,
+            "Train/LOSS/Total Generator": total_g_loss,
         }
 
         for k, v in log_dict.items():
