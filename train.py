@@ -621,7 +621,7 @@ def parse_opt(known=False):
     parser.add_argument('--processed_data_dir', type=str, default='processed_data/', help='dataset path')
     parser.add_argument('--hyp', type=str, default='config/hyp.scratch.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
-    parser.add_argument('--batch-size', type=int, default=64, help='total batch size for all GPUs')
+    parser.add_argument('--batch_size', type=int, default=64, help='total batch size for all GPUs')
     parser.add_argument('--data_loader_workers', type=int, default=4, help='data_loader_workers')
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
     parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
