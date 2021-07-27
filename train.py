@@ -67,7 +67,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     epochs = opt.epochs
 
     # Set number of InfoGAN Code
-    infogan_code = hyp['infogan_code']
+    infogan_cont_code = hyp['infogan_cont_code']
+    infogan_disc_code = hyp['infogan_disc_code']
     # Loggers
     loggers = {'wandb': None, 'tb': None}  # loggers dict
 
@@ -119,7 +120,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         target_encoder.to(device)
 
         lstm_hidden = int(hyp['lstm_hidden'])
-        infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_code, out_dim=lstm_hidden)
+        infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_cont_code + infogan_disc_code, out_dim=lstm_hidden)
         infogan_code_encoder.to(device)
 
         # LSTM
@@ -133,14 +134,14 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
         # LSTM Discriminator
         discriminator_in = 277
-        infogan_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code)
+        infogan_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, hidden_dim=256)
         infogan_discriminator.to(device)
 
         # DInfoGAN
         d_infogan = DInfoGAN(input_dim=30)
         d_infogan.to(device)
         # QInfoGAN
-        q_infogan = QInfoGAN(input_dim=30, discrete_code_dim=infogan_code)
+        q_infogan = QInfoGAN(input_dim=30, discrete_code_dim=infogan_disc_code, continuous_code_dim=infogan_cont_code)
         q_infogan.to(device)
 
         
@@ -200,7 +201,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         target_encoder.to(device)
 
         lstm_hidden = int(hyp['lstm_hidden'])
-        infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_code, out_dim=lstm_hidden)
+        infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_cont_code+infogan_disc_code, out_dim=lstm_hidden)
         infogan_code_encoder.to(device)
 
         # LSTM
@@ -212,19 +213,20 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         decoder = Decoder(input_dim=lstm_hidden, out_dim=state_in)
         decoder.to(device)
 
-        # LSTM Discriminator
+        # Discriminator
         discriminator_in = 277
-        infogan_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code)
+        infogan_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, hidden_dim=256)
         infogan_discriminator.to(device)
 
         # DInfoGAN
         d_infogan = DInfoGAN(input_dim=30)
         d_infogan.to(device)
         # QInfoGAN
-        q_infogan = QInfoGAN(input_dim=30, discrete_code_dim=infogan_code)
+        q_infogan = QInfoGAN(input_dim=30, discrete_code_dim=infogan_disc_code, continuous_code_dim=infogan_cont_code)
         q_infogan.to(device)
 
     infogan_disc_code_loss = nn.CrossEntropyLoss()
+    infogan_cont_code_loss = nn.GaussianNLLLoss()
 
     pe = PositionalEncoding(dimension=256, max_len=lafan_dataset.max_transition_length, device=device)
 
@@ -337,7 +339,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             pred_list.append(global_pos[:,0])
 
             # InfoGAN code (per motion)
-            infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=infogan_code, device=device)
+            infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=infogan_disc_code, continuous_code_dim=infogan_cont_code, device=device)
             
             lstm.h[0] = infogan_code_encoder(infogan_code_gen.to(torch.float))
             assert lstm.h[0].shape == (current_batch_size, lstm_hidden)
@@ -516,10 +518,13 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 if epoch >= hyp['gan_start_epoch']:
                     info_gen_fake_gan_out = infogan_discriminator(single_pose_fake_input)[:,0,:]
                     info_gen_fake_d_out = d_infogan(info_gen_fake_gan_out)
-                    info_gen_fake_loss = torch.mean((info_gen_fake_d_out - 1) ** 2) / 2.0
+                    info_gen_fake_loss = torch.mean((info_gen_fake_d_out - 1) ** 2)
 
-                    info_gen_fake_q_out = q_infogan(info_gen_fake_gan_out)
-                    info_gen_code_loss = infogan_disc_code_loss(info_gen_fake_q_out, fake_indices)
+                    info_gen_fake_q_out, info_gen_fake_q_mu, info_gen_fake_q_var = q_infogan(info_gen_fake_gan_out)
+                    
+                    info_gen_code_loss_d = infogan_disc_code_loss(info_gen_fake_q_out, fake_indices)
+                    info_gen_code_loss_c = infogan_cont_code_loss(infogan_code_gen[:, infogan_disc_code:], info_gen_fake_q_mu, info_gen_fake_q_var)
+
                 
                 else:
                     info_gen_fake_loss = 0
@@ -530,7 +535,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                 hyp['loss_root_weight'] * loss_root + \
                                 hyp['loss_contact_weight'] * loss_contact + \
                                 hyp['loss_generator_weight'] * info_gen_fake_loss + \
-                                hyp['loss_mi_weight'] * info_gen_code_loss
+                                hyp['loss_mi_weight'] * (info_gen_code_loss_d + info_gen_code_loss_c)
             
                 loss_total = total_g_loss
 
@@ -563,7 +568,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             "Train/LOSS/Contact Loss": hyp['loss_contact_weight'] * loss_contact, 
             "Train/LOSS/InfoGAN Discriminator": info_d_loss, 
             "Train/LOSS/InfoGAN Generator": hyp['loss_generator_weight'] * info_gen_fake_loss, 
-            "Train/LOSS/Discrete Code": hyp['loss_mi_weight'] * info_gen_code_loss, 
+            "Train/LOSS/Discrete Code": hyp['loss_mi_weight'] * (info_gen_code_loss_d + info_gen_code_loss_c), 
             "Train/LOSS/Total Generator": loss_total,
         }
 

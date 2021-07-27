@@ -142,11 +142,10 @@ class QDiscriminator(nn.Module):
 
 class InfoGANDiscriminator(nn.Module):
     # refer: 3.5 Motion discriminators, 3.7.2 sliding critics
-    def __init__(self, input_dim=128, hidden_dim=128, discrete_code_dim=4):
+    def __init__(self, input_dim=128, hidden_dim=128):
         super().__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
-        self.discrete_code_dim = discrete_code_dim
 
         self.conv1d_1 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=1)
         self.conv1d_32 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3, padding=2, dilation=2)
@@ -171,9 +170,9 @@ class DInfoGAN(nn.Module):
         self.input_dim = input_dim
 
         self.conv_to_gan = nn.Sequential(
-            nn.Linear(input_dim, 16),
+            nn.Linear(input_dim, input_dim),
             nn.ReLU(),
-            nn.Linear(16, 1)
+            nn.Linear(input_dim, 1)
         )
         self.sigmoid = nn.Sigmoid()
 
@@ -183,16 +182,35 @@ class DInfoGAN(nn.Module):
         return out
 
 class QInfoGAN(nn.Module):
-    def __init__(self, input_dim=30, discrete_code_dim=4):
+    def __init__(self, input_dim=30, discrete_code_dim=4, continuous_code_dim=2):
         super().__init__()
         self.input_dim = input_dim
         self.discrete_code_dim = discrete_code_dim
+        self.continuous_code_dim = continuous_code_dim
 
-        self.conv_to_infogan = nn.Sequential(
-            nn.Linear(input_dim, 16),
+        self.conv_to_infogan_discrete = nn.Sequential(
+            nn.Linear(input_dim, input_dim),
             nn.ReLU(),
-            nn.Linear(16, self.discrete_code_dim)
+            nn.Linear(input_dim, self.discrete_code_dim)
         )
+
+        self.conv_to_infogan_continuous_mu = nn.Sequential(
+            nn.Linear(input_dim, input_dim),
+            nn.ReLU(),
+            nn.Linear(input_dim, self.continuous_code_dim)
+        )
+
+        self.conv_to_infogan_continuous_var = nn.Sequential(
+            nn.Linear(input_dim, input_dim),
+            nn.ReLU(),
+            nn.Linear(input_dim, self.continuous_code_dim)
+        )
+        self.softplus = nn.Softplus()
+
+
     def forward(self, x):
-        q_discrete = self.conv_to_infogan(x)
-        return q_discrete
+        q_discrete = self.conv_to_infogan_discrete(x)
+
+        mu = self.conv_to_infogan_continuous_mu(x)
+        var = self.softplus(self.conv_to_infogan_continuous_var(x))
+        return q_discrete, mu, var
