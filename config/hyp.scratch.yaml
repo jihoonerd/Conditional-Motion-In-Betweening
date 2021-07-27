@@ -1,11 +1,12 @@
 lstm_hidden: 1024
-loss_mi_weight: 1.0
+loss_mi_weight: 0.1
 loss_discriminator_weight: 1.0
 loss_generator_weight: 1.0
 save_optimizer: False
 optim_beta1: 0.5
 optim_beta2: 0.9
-infogan_code: 10
+infogan_cont_code: 10
+infogan_disc_code: 10
 pdist_scale: 10
 discriminator_learning_rate: 0.0001
 generator_learning_rate: 0.001
