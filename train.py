@@ -534,10 +534,14 @@ def train(opt,
                     info_gen_fake_loss = torch.mean((info_gen_fake_d_out - 1) ** 2)
 
                     info_gen_fake_q_out, info_gen_fake_q_mu, info_gen_fake_q_var = q_infogan(info_gen_fake_gan_out)
-
-                    info_gen_code_loss_d = infogan_disc_code_loss(info_gen_fake_q_out, fake_indices)
-                    info_gen_code_loss_c = infogan_cont_code_loss(infogan_code_gen[:, infogan_disc_code:], info_gen_fake_q_mu, info_gen_fake_q_var)
-
+                    if infogan_disc_code != 0 :
+                        info_gen_code_loss_d = infogan_disc_code_loss(info_gen_fake_q_out, fake_indices)
+                    else :
+                        info_gen_code_loss_d = 0 
+                    if infogan_cont_code != 0 :
+                        info_gen_code_loss_c = infogan_cont_code_loss(infogan_code_gen[:, infogan_disc_code:], info_gen_fake_q_mu, info_gen_fake_q_var)
+                    else : 
+                        info_gen_code_loss_c = 0
                 else:
                     info_gen_fake_loss = 0
                     info_gen_code_loss_d = 0
