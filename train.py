@@ -4,7 +4,6 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict
 
 import numpy as np
 import torch
@@ -24,7 +23,7 @@ from rmi.data.utils import flip_bvh, generate_infogan_code
 from rmi.model.network import (Decoder, InfoganCodeEncoder, DInfoGAN, QInfoGAN,
                                InfoGANDiscriminator, InputEncoder, LSTMNetwork)
 from rmi.model.positional_encoding import PositionalEncoding
-from utils.general import check_file, colorstr, get_latest_run, increment_path
+from utils.general import colorstr, get_latest_run, increment_path
 from utils.torch_utils import de_parallel, intersect_dicts, select_device
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 
@@ -49,7 +48,6 @@ def train(opt,
     # Save run settings
     with open(save_dir / 'opt.yaml', 'w') as f:
         yaml.safe_dump(vars(opt), f, sort_keys=False)
-
 
     project = opt.project
     save_interval = opt.save_interval
@@ -574,18 +572,17 @@ def train(opt,
             scaler.step(generator_optimizer)
             scaler.update()
         final_epoch = epoch + 1 == epochs
-        # Log
 
         # Log
         log_dict = {
-            "Train/LOSS/Positional Loss": hyp['loss_pos_weight'] * loss_pos, 
-            "Train/LOSS/Quaternion Loss": hyp['loss_quat_weight'] * loss_quat, 
-            "Train/LOSS/Root Loss": hyp['loss_root_weight'] * loss_root, 
-            "Train/LOSS/Contact Loss": hyp['loss_contact_weight'] * loss_contact, 
-            "Train/LOSS/InfoGAN Discriminator": hyp['loss_discriminator_weight'] * info_d_loss, 
-            "Train/LOSS/InfoGAN Generator": hyp['loss_generator_weight'] * info_gen_fake_loss,
-            "Train/LOSS/Discrete Code": hyp['loss_mi_weight'] * info_gen_code_loss_d,
-            "Train/LOSS/Continuous Code": hyp['loss_mi_weight'] * info_gen_code_loss_c,
+            "Train/LOSS/Positional Loss": opt.loss_pos_weight * loss_pos, 
+            "Train/LOSS/Quaternion Loss": opt.loss_quat_weight * loss_quat, 
+            "Train/LOSS/Root Loss": opt.loss_root_weight * loss_root, 
+            "Train/LOSS/Contact Loss": opt.loss_contact_weight * loss_contact, 
+            "Train/LOSS/InfoGAN Discriminator": opt.loss_discriminator_weight * info_d_loss, 
+            "Train/LOSS/InfoGAN Generator": opt.loss_generator_weight * info_gen_fake_loss,
+            "Train/LOSS/Discrete Code": opt.loss_mi_weight * info_gen_code_loss_d,
+            "Train/LOSS/Continuous Code": opt.loss_mi_weight * info_gen_code_loss_c,
             "Train/LOSS/Total Generator": total_g_loss,
         }
 
@@ -684,7 +681,6 @@ def main(opt):
     device = select_device(opt.device, batch_size=opt.batch_size)
 
     train(opt, device)
-
 
 def run(**kwargs):
     # Usage: import train; train.run(weights='RMIB_InfoGAN.pt')
