@@ -148,18 +148,20 @@ class InfoGANDiscriminator(nn.Module):
         self.hidden_dim = hidden_dim
 
         self.conv1d_1 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=1, padding=0, dilation=1)
+        self.conv1d_31 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3, padding=1, dilation=1)
         self.conv1d_32 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3, padding=2, dilation=2)
         self.conv1d_33 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3, padding=3, dilation=3)
         self.conv1d_35 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3, padding=5, dilation=5)
-        self.conv1d_1x1 = nn.Conv1d(4 * self.hidden_dim, 1, kernel_size=1)
+        self.conv1d_1x1 = nn.Conv1d(5 * self.hidden_dim, 1, kernel_size=1)
 
     def forward(self, x):
         out_conv1d_1 = F.relu(self.conv1d_1(x))
+        out_conv1d_31 = F.relu(self.conv1d_31(x))
         out_conv1d_32 = F.relu(self.conv1d_32(x))
         out_conv1d_33 = F.relu(self.conv1d_33(x))
         out_conv1d_35 = F.relu(self.conv1d_35(x))
 
-        conv_out = torch.cat([out_conv1d_1, out_conv1d_32, out_conv1d_33, out_conv1d_35], dim=1)
+        conv_out = torch.cat([out_conv1d_1, out_conv1d_31, out_conv1d_32, out_conv1d_33, out_conv1d_35], dim=1)
         out = self.conv1d_1x1(conv_out)
         return out
 
