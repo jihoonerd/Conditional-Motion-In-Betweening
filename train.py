@@ -4,7 +4,6 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict
 
 import numpy as np
 import torch
@@ -21,8 +20,9 @@ from tqdm import tqdm
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh, generate_infogan_code
-from rmi.model.network import (Decoder, InfoganCodeEncoder, DInfoGAN, QInfoGAN,
-                               InfoGANDiscriminator, InputEncoder, LSTMNetwork)
+from rmi.model.network import (Decoder, Discriminator, InfoganCodeEncoder,
+                               InputEncoder, LSTMNetwork, NDiscriminator,
+                               QDiscriminator)
 from rmi.model.positional_encoding import PositionalEncoding
 from utils.general import check_file, colorstr, get_latest_run, increment_path
 from utils.torch_utils import de_parallel, intersect_dicts, select_device
@@ -33,8 +33,7 @@ sys.path.append(FILE.parents[0].as_posix())
 
 LOGGER = logging.getLogger(__name__)
 
-def train(hyp,  # path/to/hyp.yaml or hyp dictionary
-          opt,
+def train(opt,
           device,
           ):
 
@@ -46,15 +45,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     wdir = save_dir / 'weights'
     wdir.mkdir(parents=True, exist_ok=True)  # make dir
     last = wdir / 'last.pt'
-    # Hyperparameters
-    if isinstance(hyp, str):
-        with open(hyp) as f:
-            hyp = yaml.safe_load(f)  # load hyps dict
-    LOGGER.info(colorstr('hyperparameters: ') + ', '.join(f'{k}={v}' for k, v in hyp.items()))
 
     # Save run settings
-    with open(save_dir / 'hyp.yaml', 'w') as f:
-        yaml.safe_dump(hyp, f, sort_keys=False)
     with open(save_dir / 'opt.yaml', 'w') as f:
         yaml.safe_dump(vars(opt), f, sort_keys=False)
 
@@ -67,8 +59,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     epochs = opt.epochs
 
     # Set number of InfoGAN Code
-    infogan_cont_code = hyp['infogan_cont_code']
-    infogan_disc_code = hyp['infogan_disc_code']
+    infogan_cont_code = opt.infogan_cont_code
+    infogan_disc_code = opt.infogan_disc_code
     # Loggers
     loggers = {'wandb': None, 'tb': None}  # loggers dict
 
@@ -81,7 +73,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     wandb_logger = WandbLogger(opt, save_dir.stem, run_id)
     loggers['wandb'] = wandb_logger.wandb
     if loggers['wandb']:
-        weights, epochs, hyp = opt.weights, opt.epochs, hyp  # may update weights, epochs if resuming
+        weights, epochs = opt.weights, opt.epochs  # may update weights, epochs if resuming
 
 
     # Load Skeleton
@@ -94,7 +86,6 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
     lafan_dataset = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
-    lafan_dataset.global_pos_std = lafan_dataset.data['global_pos_std']
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=batch_size, shuffle=True, num_workers=opt.data_loader_workers)
 
     # Extract dimension from processed data
@@ -119,8 +110,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         target_encoder = InputEncoder(input_dim=target_in)
         target_encoder.to(device)
 
-        lstm_hidden = int(hyp['lstm_hidden'])
-        infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_cont_code + infogan_disc_code, out_dim=lstm_hidden)
+        lstm_hidden = int(opt.lstm_hidden)
+        infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_code, out_dim=lstm_hidden)
         infogan_code_encoder.to(device)
 
         # LSTM
@@ -132,17 +123,16 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         decoder = Decoder(input_dim=lstm_hidden, out_dim=state_in)
         decoder.to(device)
 
-        # LSTM Discriminator
-        discriminator_in = 277
-        infogan_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, hidden_dim=256)
-        infogan_discriminator.to(device)
+        lstm_discriminator_in = 277
 
-        # DInfoGAN
-        d_infogan = DInfoGAN(input_dim=30)
-        d_infogan.to(device)
-        # QInfoGAN
-        q_infogan = QInfoGAN(input_dim=30, discrete_code_dim=infogan_disc_code, continuous_code_dim=infogan_cont_code)
-        q_infogan.to(device)
+        lstm_discriminator = LSTMNetwork(input_dim=lstm_discriminator_in, hidden_dim=512, device=device)
+        lstm_discriminator.to(device)
+        lstm_extractor = Discriminator(input_dim=512, out_dim=256)
+        lstm_extractor.to(device)
+        n_discriminator = NDiscriminator(input_dim=256)
+        n_discriminator.to(device)
+        q_discriminator = QDiscriminator(input_dim=256, discrete_code_dim=infogan_code)
+        q_discriminator.to(device)
 
         
         #exclude 
@@ -161,10 +151,10 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         state_dict_offset_encoder = intersect_dicts(state_dict_offset_encoder, offset_encoder.state_dict(), exclude=exclude)  
         offset_encoder.load_state_dict(state_dict_offset_encoder, strict=False)  
 
-        state_infogan_code_encoder = ckpt['infogan_code_encoder'].float().state_dict()
-        state_infogan_code_encoder = intersect_dicts(state_infogan_code_encoder, infogan_code_encoder.state_dict(), exclude=exclude)
-        infogan_code_encoder.load_state_dict(state_infogan_code_encoder, strict=False)
-        
+        state_dict_infogan_code_encoder = ckpt['state_dict_infogan_code_encoder'].float().state_dict()
+        state_dict_infogan_code_encoder = intersect_dicts(state_dict_infogan_code_encoder, infogan_code_encoder.state_dict(), exclude=exclude)
+        infogan_code_encoder.load_state_dict(state_dict_infogan_code_encoder, strict=False) 
+
         state_dict_lstm = ckpt['lstm'].float().state_dict()  
         state_dict_lstm = intersect_dicts(state_dict_lstm, lstm.state_dict(), exclude=exclude)  
         lstm.load_state_dict(state_dict_lstm, strict=False)  
@@ -173,18 +163,23 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         state_dict_decoder = intersect_dicts(state_dict_decoder, decoder.state_dict(), exclude=exclude)  
         decoder.load_state_dict(state_dict_decoder, strict=False)  
         
-        state_infogan_discriminator = ckpt['infogan_discriminator'].float().state_dict()
-        state_infogan_discriminator = intersect_dicts(state_infogan_discriminator, infogan_discriminator.state_dict(), exclude=exclude)
-        infogan_discriminator.load_state_dict(state_infogan_discriminator, strict=False)
+        state_dict_lstm_discriminator = ckpt['lstm_discriminator'].float().state_dict()
+        state_dict_lstm_discriminator = intersect_dicts(state_dict_lstm_discriminator, lstm_discriminator.state_dict(), exclude=exclude)
+        lstm_discriminator.load_state_dict(state_dict_lstm_discriminator, strict=False)
+        
+        state_dict_lstm_extractor = ckpt['lstm_extractor'].float().state_dict()
+        state_dict_lstm_extractor = intersect_dicts(state_dict_lstm_extractor, lstm_extractor.state_dict(), exclude=exclude)
+        lstm_extractor.load_state_dict(state_dict_lstm_extractor, strict=False)
+        
+        state_dict_n_discriminator = ckpt['n_discriminator'].float().state_dict()
+        state_dict_n_discriminator = intersect_dicts(state_dict_n_discriminator, n_discriminator.state_dict(), exclude=exclude)
+        n_discriminator.load_state_dict(state_dict_n_discriminator, strict=False)
 
-        state_d_infogan = ckpt['d_infogan'].float().state_dict()
-        state_d_infogan = intersect_dicts(state_d_infogan, d_infogan.state_dict(), exclude=exclude)
-        d_infogan.load_state_dict(state_d_infogan, strict=False)
+        state_dict_q_discriminator = ckpt['q_discriminator'].float().state_dict()
+        state_dict_q_discriminator = intersect_dicts(state_dict_q_discriminator, q_discriminator.state_dict(), exclude=exclude)
+        q_discriminator.load_state_dict(state_dict_q_discriminator, strict=False)
 
-        state_q_infogan = ckpt['q_infogan'].float().state_dict()
-        state_q_infogan = intersect_dicts(state_q_infogan, q_infogan.state_dict(), exclude=exclude)
-        q_infogan.load_state_dict(state_q_infogan, strict=False)
-
+        # LOGGER.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
     else : 
         # Initializing networks
         state_in = root_v_dim + local_q_dim + contact_dim
@@ -200,8 +195,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         target_encoder = InputEncoder(input_dim=target_in)
         target_encoder.to(device)
 
-        lstm_hidden = int(hyp['lstm_hidden'])
-        infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_cont_code+infogan_disc_code, out_dim=lstm_hidden)
+        lstm_hidden = int(opt.lstm_hidden)
+        infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_code, out_dim=lstm_hidden)
         infogan_code_encoder.to(device)
 
         # LSTM
@@ -213,20 +208,19 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         decoder = Decoder(input_dim=lstm_hidden, out_dim=state_in)
         decoder.to(device)
 
-        # Discriminator
-        discriminator_in = 277
-        infogan_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, hidden_dim=256)
-        infogan_discriminator.to(device)
+        lstm_discriminator_in = 277
 
-        # DInfoGAN
-        d_infogan = DInfoGAN(input_dim=30)
-        d_infogan.to(device)
-        # QInfoGAN
-        q_infogan = QInfoGAN(input_dim=30, discrete_code_dim=infogan_disc_code, continuous_code_dim=infogan_cont_code)
-        q_infogan.to(device)
+        lstm_discriminator = LSTMNetwork(input_dim=lstm_discriminator_in, hidden_dim=512, device=device)
+        lstm_discriminator.to(device)
+        lstm_extractor = Discriminator(input_dim=512, out_dim=256)
+        lstm_extractor.to(device)
+        n_discriminator = NDiscriminator(input_dim=256)
+        n_discriminator.to(device)
+        q_discriminator = QDiscriminator(input_dim=256, discrete_code_dim=infogan_code)
+        q_discriminator.to(device)
+    
 
-    infogan_disc_code_loss = nn.CrossEntropyLoss()
-    infogan_cont_code_loss = nn.GaussianNLLLoss(full=True)
+    infogan_disc_loss = nn.CrossEntropyLoss()
 
     pe = PositionalEncoding(dimension=256, max_len=lafan_dataset.max_transition_length, device=device)
 
@@ -263,6 +257,27 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         if any(x in k for x in freeze):
             print('freezing %s' % k)
             v.requires_grad = False
+    for k, v in lstm_discriminator.named_parameters():
+        v.requires_grad = True  # train all layers
+        if any(x in k for x in freeze):
+            print('freezing %s' % k)
+            v.requires_grad = False
+    for k, v in lstm_extractor.named_parameters():
+        v.requires_grad = True  # train all layers
+        if any(x in k for x in freeze):
+            print('freezing %s' % k)
+            v.requires_grad = False
+    for k, v in n_discriminator.named_parameters():
+        v.requires_grad = True  # train all layers
+        if any(x in k for x in freeze):
+            print('freezing %s' % k)
+            v.requires_grad = False
+    for k, v in q_discriminator.named_parameters():
+        v.requires_grad = True  # train all layers
+        if any(x in k for x in freeze):
+            print('freezing %s' % k)
+            v.requires_grad = False
+ 
 
 
 
@@ -271,22 +286,23 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     generator_optimizer = Adam(params=list(state_encoder.parameters()) + 
                                       list(offset_encoder.parameters()) + 
                                       list(target_encoder.parameters()) +
-                                      list(infogan_code_encoder.parameters()) +
                                       list(lstm.parameters()) +
                                       list(decoder.parameters()) + 
-                                      list(q_infogan.parameters()),
-                                lr=hyp['generator_learning_rate'],
-                                betas=(hyp['optim_beta1'], hyp['optim_beta2']),
+                                      list(q_discriminator.parameters()) +
+                                      list(infogan_code_encoder.parameters()),
+                                lr=opt.generator_learning_rate,
+                                betas=(opt.optim_beta1, opt.optim_beta2),
                                 amsgrad=True)
 
-    discriminator_optimizer = Adam(params=list(infogan_discriminator.parameters()) +
-                                          list(d_infogan.parameters()),
-                                    lr=hyp['discriminator_learning_rate'],
-                                    betas=(hyp['optim_beta1'], hyp['optim_beta2']),
+    discriminator_optimizer = Adam(params=list(lstm_discriminator.parameters()) +
+                                          list(lstm_extractor.parameters()) + 
+                                          list(n_discriminator.parameters()),
+                                    lr=opt.discriminator_learning_rate,
+                                    betas=(opt.optim_beta1, opt.optim_beta2),
                                     amsgrad=True)
 
 
-    teacher_forcing = hyp['teacher_forcing']
+    teacher_forcing = opt.teacher_forcing
 
     start_epoch = 0
     if pretrained:
@@ -308,8 +324,11 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         if lafan_dataset.cur_seq_length < lafan_dataset.max_transition_length:
             lafan_dataset.cur_seq_length =  np.int32(1/lafan_dataset.increase_rate * epoch + lafan_dataset.start_seq_length)
 
-        teacher_forcing *= hyp['teacher_forcing_decay']
+        teacher_forcing *= opt.teacher_forcing_decay
         teacher_forcing_prob = teacher_forcing
+
+        #pbar = enumerate(lafan_data_loader)
+        #pbar = tqdm(pbar, total=len(lafan_data_loader))
         
         pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
 
@@ -345,7 +364,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             pred_list.append(global_pos[:,0])
 
             # InfoGAN code (per motion)
-            infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=infogan_disc_code, continuous_code_dim=infogan_cont_code, device=device)
+            infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=infogan_code, device=device)
             
             lstm.h[0] = infogan_code_encoder(infogan_code_gen.to(torch.float))
             assert lstm.h[0].shape == (current_batch_size, lstm_hidden)
@@ -441,8 +460,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
                     local_q_next = local_q[:,t+1]
                     local_q_next = local_q_next.view(local_q_next.size(0), -1)
-                    
-                    # Loss
+    # Loss
                     pos_next = global_pos[:,t+1]
                     local_q_next = local_q[:,t+1]
                     local_q_next = local_q_next.view(local_q_next.size(0), -1)
@@ -486,13 +504,13 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
                 current_root = torch.stack(root_p_cur_list, -1)
                 current_real_root = torch.stack(real_root_cur_list, -1)
-                # current_real_root_noise = real_root_noise_dist.sample((current_real_root.shape[0], 30)).permute(0,2,1)
-                # current_real_root += current_real_root_noise
+                current_real_root_noise = real_root_noise_dist.sample((current_real_root.shape[0], 30)).permute(0,2,1)
+                current_real_root += current_real_root_noise
 
                 current_quaternion = torch.stack(local_q_cur_list, -1)
                 current_real_quaternion = torch.stack(real_q_cur_list, -1)
-                # current_real_quaternion_noise = torch.clamp(real_quaternion_noise_dist.sample((current_real_root.shape[0], 30)).permute(0,2,1), min=-1, max=1)
-                # current_real_quaternion += current_real_quaternion_noise
+                current_real_quaternion_noise = torch.clamp(real_quaternion_noise_dist.sample((current_real_root.shape[0], 30)).permute(0,2,1), min=-1, max=1)
+                current_real_quaternion += current_real_quaternion_noise
 
                 current_contact = torch.stack(contact_cur_list, -1)
                 current_real_contact = torch.stack(real_contact_cur_list, -1)
@@ -500,108 +518,125 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 single_pose_fake_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_root, current_quaternion, current_contact], dim=1)
                 single_pose_real_input = torch.cat([start_root, start_quaternion, target_root, target_quaternion, current_real_root, current_real_quaternion, current_real_contact], dim=1)
 
-                if epoch >= hyp['gan_start_epoch']:
+                if epoch >= opt.gan_start_epoch:
                     ## Adversarial Discriminator
-                    discriminator_optimizer.zero_grad()
-                    infogan_disc_fake_gan_out = infogan_discriminator(single_pose_fake_input.detach()).squeeze()
-                    infogan_disc_fake_d_out = d_infogan(infogan_disc_fake_gan_out)
-                    info_disc_fake_loss = torch.mean((infogan_disc_fake_d_out) ** 2)
 
-                    infogan_disc_real_gan_out = infogan_discriminator(single_pose_real_input).squeeze()
-                    infogan_disc_real_d_out = d_infogan(infogan_disc_real_gan_out)
-                    info_disc_real_loss = torch.mean((infogan_disc_real_d_out -  1) ** 2)
+                    ## LSTM Discriminator
+                    ### Score fake data (->0)
+                    lstm_discriminator.init_hidden(current_batch_size)
+                    fake_lstm_disc_out = lstm_discriminator(single_pose_fake_input.permute(2,0,1).detach())[-1]
+                    d_fake_lstm_out = lstm_extractor(fake_lstm_disc_out)
+                    d_fake_gan_out = n_discriminator(d_fake_lstm_out)
+                    d_fake_gan_score = d_fake_gan_out[:, 0]
+                    lstm_d_fake_loss = 0.5 * torch.mean((d_fake_gan_score) ** 2) * opt.loss_discriminator_weight
 
-                    info_d_loss = (info_disc_fake_loss + info_disc_real_loss) / 2.0
+                    ### Score real data (->1)
+                    lstm_discriminator.init_hidden(current_batch_size)
+                    real_lstm_disc_out = lstm_discriminator(single_pose_real_input.permute(2,0,1))[-1]
+                    d_real_lstm_out = lstm_extractor(real_lstm_disc_out)
+                    d_real_gan_out = n_discriminator(d_real_lstm_out)
+                    d_real_gan_score = d_real_gan_out[:, 0]
+                    lstm_d_real_loss = 0.5 * torch.mean((d_real_gan_score - 1) ** 2) * opt.loss_discriminator_weight
+
+                    lstm_d_loss = (lstm_d_fake_loss + lstm_d_real_loss)
 
                 else:
-                    info_d_loss = 0
+                    lstm_d_loss = 0
 
 
                 # Adversarial Geneartor
                 generator_optimizer.zero_grad()
 
                 ### Score fake data treated as real (->1)
-                if epoch >= hyp['gan_start_epoch']:
-                    info_gen_fake_gan_out = infogan_discriminator(single_pose_fake_input).squeeze()
-                    info_gen_fake_d_out = d_infogan(info_gen_fake_gan_out)
-                    info_gen_fake_loss = torch.mean((info_gen_fake_d_out - 1) ** 2)
+                if epoch >= opt.gan_start_epoch:
+                    lstm_discriminator.init_hidden(current_batch_size)
+                    fake_lstm_gen_out = lstm_discriminator(single_pose_fake_input.permute(2,0,1))[-1]
+                    g_fake_lstm_out = lstm_extractor(fake_lstm_gen_out)
+                    g_fake_gan_out = n_discriminator(g_fake_lstm_out)
+                    g_fake_gan_score = g_fake_gan_out[:, 0]
+                    g_fake_loss = torch.mean((g_fake_gan_score - 1) **2)
 
-                    info_gen_fake_q_out, info_gen_fake_q_mu, info_gen_fake_q_var = q_infogan(info_gen_fake_gan_out)
-                    
-                    info_gen_code_loss_d = infogan_disc_code_loss(info_gen_fake_q_out, fake_indices)
-                    info_gen_code_loss_c = infogan_cont_code_loss(infogan_code_gen[:, infogan_disc_code:], info_gen_fake_q_mu, info_gen_fake_q_var)
-
+                    q_logit = q_discriminator(g_fake_lstm_out)
+                    disc_code_loss = infogan_disc_loss(q_logit, fake_indices)
+                
                 else:
-                    info_gen_fake_loss = 0
-                    info_gen_code_loss_d = 0
-                    info_gen_code_loss_c = 0
-                    
+                    g_fake_loss = 0
+                    disc_code_loss = 0
 
-                total_g_loss =  hyp['loss_pos_weight'] * loss_pos + \
-                                hyp['loss_quat_weight'] * loss_quat + \
-                                hyp['loss_root_weight'] * loss_root + \
-                                hyp['loss_contact_weight'] * loss_contact + \
-                                hyp['loss_generator_weight'] * info_gen_fake_loss + \
-                                hyp['loss_mi_weight'] * (info_gen_code_loss_d + info_gen_code_loss_c)
+                total_g_loss =  opt.loss_pos_weight * loss_pos + \
+                                opt.loss_quat_weight * loss_quat + \
+                                opt.loss_root_weight * loss_root + \
+                                opt.loss_contact_weight * loss_contact + \
+                                opt.loss_generator_weight * g_fake_loss + \
+                                opt.loss_mi_weight * disc_code_loss
             
+                loss_total = total_g_loss
+
             # TOTAL LOSS
-            if epoch >= hyp['gan_start_epoch']:
+            if epoch >= opt.gan_start_epoch:
                 discriminator_optimizer.zero_grad()
-                total_d_loss = hyp['loss_discriminator_weight'] * info_d_loss
-                scaler.scale(total_d_loss).backward()
+                scaler.scale(lstm_d_loss).backward()
                 scaler.step(discriminator_optimizer)
 
             generator_optimizer.zero_grad()
-            scaler.scale(total_g_loss).backward()
+            scaler.scale(loss_total).backward()
             # Gradient clipping for training stability
             scaler.unscale_(generator_optimizer)
             torch.nn.utils.clip_grad_norm_(state_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(offset_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(target_encoder.parameters(), 1.0)
-            torch.nn.utils.clip_grad_norm_(infogan_code_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(lstm.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(decoder.parameters(), 1.0)
-            torch.nn.utils.clip_grad_norm_(q_infogan.parameters(), 1.0)
             scaler.step(generator_optimizer)
             scaler.update()
         final_epoch = epoch + 1 == epochs
-        
         # Log
-        log_dict = {
-            "Train/LOSS/Positional Loss": hyp['loss_pos_weight'] * loss_pos, 
-            "Train/LOSS/Quaternion Loss": hyp['loss_quat_weight'] * loss_quat, 
-            "Train/LOSS/Root Loss": hyp['loss_root_weight'] * loss_root, 
-            "Train/LOSS/Contact Loss": hyp['loss_contact_weight'] * loss_contact, 
-            "Train/LOSS/InfoGAN Discriminator": hyp['loss_discriminator_weight'] * info_d_loss, 
-            "Train/LOSS/InfoGAN Generator": hyp['loss_generator_weight'] * info_gen_fake_loss,
-            "Train/LOSS/Discrete Code": hyp['loss_mi_weight'] * info_gen_code_loss_d,
-            "Train/LOSS/Continuous Code": hyp['loss_mi_weight'] * info_gen_code_loss_c,
-            "Train/LOSS/Total Generator": total_g_loss,
-        }
 
-        for k, v in log_dict.items():
+
+        tags = ["Train/LOSS/Positional Loss", 
+                "Train/LOSS/Quaternion Loss", 
+                "Train/LOSS/Root Loss", 
+                "Train/LOSS/Contact Loss", 
+                "Train/LOSS/LSTM Discriminator", 
+                "Train/LOSS/LSTM Generator", 
+                "Train/LOSS/Discrete Code", 
+                "Train/LOSS/Total Generator"]  
+        loss_list = [
+            opt.loss_pos_weight * loss_pos,
+            opt.loss_quat_weight * loss_quat,
+            opt.loss_root_weight * loss_root,
+            opt.loss_contact_weight * loss_contact,
+            lstm_d_loss,
+            opt.loss_generator_weight * g_fake_loss,
+            opt.loss_mi_weight * disc_code_loss,
+            loss_total]
+
+        
+        for x, tag in zip(loss_list, tags):
             if loggers['tb']:
-                loggers['tb'].add_scalar(k, v, epoch)
+                loggers['tb'].add_scalar(tag, x, epoch)
             if loggers['wandb']:
-                wandb_logger.log({k: v})
+                wandb_logger.log({tag: x}) 
         wandb_logger.end_epoch()
 
         # Save model
         if (not nosave) or (final_epoch):  # if save
             ckpt = {'epoch': epoch,
+                    'infogan_code_encoder': infogan_code_encoder.state_dict(),
                     'state_encoder': state_encoder.state_dict(),
                     'target_encoder': target_encoder.state_dict(),
                     'offset_encoder': offset_encoder.state_dict(),
                     'infogan_code_encoder': infogan_code_encoder.state_dict(),
                     'lstm': lstm.state_dict(),
                     'decoder': decoder.state_dict(),
-                    'infogan_discriminator': infogan_discriminator.state_dict(),
-                    'q_infogan': q_infogan.state_dict(),
-                    'd_infogan': d_infogan.state_dict(),
+                    'lstm_discriminator': lstm_discriminator.state_dict(),
+                    'lstm_extractor': lstm_extractor.state_dict(),
+                    'n_discriminator': n_discriminator.state_dict(),
+                    'q_discriminator': q_discriminator.state_dict(),
                     'wandb_id': wandb_logger.wandb_run.id if loggers['wandb'] else None}
 
-            if (epoch % save_interval) == 0:
-                torch.save(ckpt, os.path.join(wdir, f'train-{epoch}.pt'))
+            # Save last, best and delete
+            torch.save(ckpt, str(last.parent)+'train-'+str(epoch)+'.pt')
             if loggers['wandb']:
                 if ((epoch + 1) % opt.save_interval == 0 and not epochs) and opt.save_interval != -1:
                     wandb_logger.log_model(last.parent, opt, epoch)
@@ -619,7 +654,6 @@ def parse_opt(known=False):
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='dataset path')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data/', help='dataset path')
-    parser.add_argument('--hyp', type=str, default='config/hyp.scratch.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--batch_size', type=int, default=64, help='total batch size for all GPUs')
     parser.add_argument('--data_loader_workers', type=int, default=4, help='data_loader_workers')
@@ -632,6 +666,26 @@ def parse_opt(known=False):
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--save_interval', type=int, default=1, help='Log model after every "save_period" epoch')
+    ##Model hyper parameters ##
+    parser.add_argument('--lstm_hidden', type=int, default=1024, help='lstm_hidden layers')
+    parser.add_argument('--loss_mi_weight', type=float, default=0.1, help='loss_mi_weight')
+    parser.add_argument('--loss_discriminator_weight', type=float, default=1.0, help='loss_discriminator_weight')
+    parser.add_argument('--loss_generator_weight', type=float, default=1.0, help='loss_generator_weight')
+    parser.add_argument('--save_optimizer', type=bool, default=False, help='bool save_optimizer')
+    parser.add_argument('--discriminator_learning_rate', type=float, default=0.0001, help='discriminator_learning_rate')
+    parser.add_argument('--generator_learning_rate', type=float, default=0.001, help='generator_learning_rate')
+    parser.add_argument('--optim_beta1', type=float, default=0.5, help='optim_beta1')
+    parser.add_argument('--optim_beta2', type=float, default=0.9, help='optim_beta2')
+    parser.add_argument('--gan_start_epoch', type=int, default=0, help='gan_start_epoch')
+    parser.add_argument('--infogan_cont_code', type=int, default=5, help='# of infogan_cont_code')
+    parser.add_argument('--infogan_disc_code', type=int, default=10, help='# of infogan_disc_code')
+    parser.add_argument('--loss_pos_weight', type=float, default=0.5, help='loss_pos_weight')
+    parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
+    parser.add_argument('--loss_root_weight', type=float, default=1.0, help='loss_root_weight')
+    parser.add_argument('--loss_contact_weight', type=float, default=0.1, help='loss_contact_weight')
+    parser.add_argument('--teacher_forcing', type=float, default=0, help='teacher_forcing')    
+    parser.add_argument('--teacher_forcing_decay', type=float, default=0.9, help='teacher_forcing_decay')
+    ########################
     opt = parser.parse_known_args()[0] if known else parser.parse_args()
     return opt
 
@@ -646,8 +700,6 @@ def main(opt):
         opt.weights, opt.resume = ckpt, True  # reinstate
         LOGGER.info(f'Resuming training from {ckpt}')
     else:
-        # opt.hyp = opt.hyp or ('hyp.finetune.yaml' if opt.weights else 'hyp.scratch.yaml')
-        opt.hyp = check_file(opt.hyp)  # check files
         opt.exp_name = opt.exp_name
         # time_stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         # model_path = os.path.join(opt.exp_name, time_stamp)
@@ -656,7 +708,7 @@ def main(opt):
 
     device = select_device(opt.device, batch_size=opt.batch_size)
 
-    train(opt.hyp, opt, device)
+    train(opt, device)
 
 
 def run(**kwargs):
