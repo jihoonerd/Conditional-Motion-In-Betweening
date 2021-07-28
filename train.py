@@ -521,7 +521,7 @@ def train(opt,
 
                     info_d_loss = (info_disc_fake_loss + info_disc_real_loss) / 2.0
                 else:
-                    lstm_d_loss = 0
+                    info_d_loss = 0
 
 
                 # Adversarial Geneartor
