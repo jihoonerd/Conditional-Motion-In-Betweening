@@ -1,8 +1,8 @@
 python3 train.py --batch_size=128 \
-	--exp_name=prac1 \
+	--exp_name=0728_D15C0 \
 	--entity=rilab-motion \
-	--infogan_cont_code=10 \
-	--infogan_disc_code=5 \
+	--infogan_cont_code=0 \
+	--infogan_disc_code=15 \
 	--loss_pos_weight=0.5 \
 	--loss_quat_weight=1.0 \
 	--loss_root_weight=1.0 \

@@ -9,6 +9,7 @@ from kpt.model.skeleton import TorchSkeleton
 from PIL import Image
 from pymo.parsers import BVHParser
 from torch.utils.data import DataLoader
+from mpl_toolkits import mplot3d
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import generate_infogan_code, write_json
@@ -26,8 +27,11 @@ def test(opt, device):
     save_dir, pretrained_weights, data_path = opt.save_dir, opt.pretrained_weights, opt.data_path    
     device = torch.device("cpu")
 
-    infogan_code = opt.infogan_code
-    conditioning_code = opt.conditioning_code
+
+    infogan_cont_code = opt.infogan_cont_code 
+    infogan_disc_code = opt.infogan_disc_code
+    conditioning_disc_code = opt.conditioning_disc_code
+    conditioning_cont_code = opt.conditioning_cont_code
     save_dir = Path(save_dir)
 
     # Load Skeleton
@@ -62,7 +66,7 @@ def test(opt, device):
     target_encoder.to(device)
 
     lstm_hidden = opt.lstm_hidden
-    infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_code, out_dim=lstm_hidden)
+    infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_cont_code + infogan_disc_code, out_dim=lstm_hidden)
     infogan_code_encoder.to(device)
 
     # LSTM
@@ -73,18 +77,6 @@ def test(opt, device):
     # Decoder
     decoder = Decoder(input_dim=lstm_hidden, out_dim=state_in)
     decoder.to(device)
-
-    # Discriminator
-    discriminator_in = 277
-    infogan_discriminator = InfoGANDiscriminator(input_dim=discriminator_in, discrete_code_dim=infogan_code)
-    infogan_discriminator.to(device)
-
-    # DInfoGAN
-    d_infogan = DInfoGAN(input_dim=30)
-    d_infogan.to(device)
-    # QInfoGAN
-    q_infogan = QInfoGAN(input_dim=30, discrete_code_dim=infogan_code)
-    q_infogan.to(device)
 
     #Load to FP32
     state_dict_state_encoder = ckpt['state_encoder']
@@ -104,16 +96,6 @@ def test(opt, device):
 
     state_dict_decoder = ckpt['decoder']
     decoder.load_state_dict(state_dict_decoder)
-
-    state_infogan_discriminator = ckpt['infogan_discriminator']
-    infogan_discriminator.load_state_dict(state_infogan_discriminator)
-
-    state_d_infogan = ckpt['d_infogan']
-    d_infogan.load_state_dict(state_d_infogan)
-
-    state_q_infogan = ckpt['q_infogan']
-    q_infogan.load_state_dict(state_q_infogan)
-
 
     pe = PositionalEncoding(dimension=256, max_len=lafan_dataset_test.max_transition_length)
 
@@ -153,8 +135,12 @@ def test(opt, device):
             lstm.init_hidden(current_batch_size)
 
             # InfoGAN code
-            infogan_code_gen = torch.zeros(current_batch_size, infogan_code)
-            infogan_code_gen[:,conditioning_code] = 1
+            infogan_disc_code_gen = torch.zeros(current_batch_size, infogan_disc_code)
+            infogan_disc_code_gen[:,conditioning_disc_code] = 1
+            infogan_cont_code_gen = torch.zeros(current_batch_size, infogan_cont_code)
+            cont_value = torch.Tensor(np.random.uniform(low=-1, high=1, size=current_batch_size))
+            infogan_cont_code_gen[:,conditioning_cont_code] = cont_value
+            infogan_code_gen = torch.cat([infogan_disc_code_gen, infogan_cont_code_gen], dim=1)
 
             lstm.h[0] = infogan_code_encoder(infogan_code_gen.to(torch.float))
 
@@ -264,8 +250,10 @@ def parse_opt(known=False):
     parser.add_argument('--num_gifs', type=int, default=30, help='total batch size for all GPUs')
     parser.add_argument('--training_frames', type=int, default=30, help='total batch size for all GPUs')
     parser.add_argument('--inference_batch_index', type=int, default=20, help='total batch size for all GPUs')
-    parser.add_argument('--infogan_code', type=int, default=2, help='total batch size for all GPUs')
-    parser.add_argument('--conditioning_code', type=int, default=1, help='total batch size for all GPUs')
+    parser.add_argument('--infogan_disc_code', type=int, default=2, help='total batch size for all GPUs')
+    parser.add_argument('--infogan_cont_code', type=int, default=2, help='total batch size for all GPUs')
+    parser.add_argument('--conditioning_disc_code', type=int, default=1, help='total batch size for all GPUs')
+    parser.add_argument('--conditioning_cont_code', type=int, default=1, help='total batch size for all GPUs')    
     parser.add_argument('--plot', type=bool, default=True, help='plot motion images')
     parser.add_argument('--data_loader_workers', type=int, default=4, help='data_loader_workers')
     parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
