@@ -83,7 +83,7 @@ def train(opt,
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=True, device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action='walk', device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     lafan_dataset.global_pos_std = lafan_dataset.data['global_pos_std']
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=batch_size, shuffle=True, num_workers=opt.data_loader_workers)
 
@@ -534,10 +534,14 @@ def train(opt,
                     info_gen_fake_loss = torch.mean((info_gen_fake_d_out - 1) ** 2)
 
                     info_gen_fake_q_out, info_gen_fake_q_mu, info_gen_fake_q_var = q_infogan(info_gen_fake_gan_out)
-
-                    info_gen_code_loss_d = infogan_disc_code_loss(info_gen_fake_q_out, fake_indices)
-                    info_gen_code_loss_c = infogan_cont_code_loss(infogan_code_gen[:, infogan_disc_code:], info_gen_fake_q_mu, info_gen_fake_q_var)
-
+                    if infogan_disc_code != 0 :
+                        info_gen_code_loss_d = infogan_disc_code_loss(info_gen_fake_q_out, fake_indices)
+                    else :
+                        info_gen_code_loss_d = 0 
+                    if infogan_cont_code != 0 :
+                        info_gen_code_loss_c = infogan_cont_code_loss(infogan_code_gen[:, infogan_disc_code:], info_gen_fake_q_mu, info_gen_fake_q_var)
+                    else : 
+                        info_gen_code_loss_c = 0
                 else:
                     info_gen_fake_loss = 0
                     info_gen_code_loss_d = 0
@@ -605,6 +609,8 @@ def train(opt,
                     'infogan_discriminator': infogan_discriminator.state_dict(),
                     'q_infogan': q_infogan.state_dict(),
                     'd_infogan': d_infogan.state_dict(),
+                    'disc_code': infogan_disc_code,
+                    'cont_code': infogan_cont_code,
                     'wandb_id': wandb_logger.wandb_run.id if loggers['wandb'] else None}
             if (epoch % save_interval) == 0:
                 torch.save(ckpt, os.path.join(wdir, f'train-{epoch}.pt'))
