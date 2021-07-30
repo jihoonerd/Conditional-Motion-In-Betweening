@@ -17,7 +17,7 @@ from rmi.model.network import (Decoder, InfoGANDiscriminator, InfoganCodeEncoder
                                InputEncoder, LSTMNetwork, DInfoGAN,
                                QInfoGAN)
 from rmi.model.positional_encoding import PositionalEncoding
-from rmi.vis.pose import plot_pose, plot_pose_compare, plot_pose_compare2
+from rmi.vis.pose import plot_pose, plot_pose_compare2, plot_pose_compare3, plot_pose_compare4, plot_pose_compare5
 from utils.general import increment_path
 from utils.torch_utils import select_device
 
@@ -31,6 +31,7 @@ def test(opt, device):
 
     infogan_cont_code = opt.infogan_cont_code 
     infogan_disc_code = opt.infogan_disc_code
+    control_latent = opt.control_latent
     conditioning_disc_code = opt.conditioning_disc_code
     conditioning_cont_code = opt.conditioning_cont_code
     save_dir = Path(save_dir)
@@ -98,6 +99,8 @@ def test(opt, device):
     state_dict_decoder = ckpt['decoder']
     decoder.load_state_dict(state_dict_decoder)
 
+    infogan_cont_code = ckpt['cont_code']
+    infogan_disc_code = ckpt['disc_code']
     pe = PositionalEncoding(dimension=256, max_len=lafan_dataset_test.max_transition_length)
 
     print("MODELS LOADED WITH SAVED WEIGHTS")
@@ -108,19 +111,19 @@ def test(opt, device):
     infogan_code_encoder.eval()
     lstm.eval()
     decoder.eval()
-    cond_disc_code = list(range(0,5))
+    if control_latent == 'disc':
+        cond_codes = list(range(0,infogan_disc_code))
+    else :
+        cond_codes = np.linspace(-1, 1, 5)
     for i_batch, sampled_batch in enumerate(lafan_data_loader_test):
             # img_integrated = []
-        for conditioning_disc_code in [0]:
-
             current_batch_size = len(sampled_batch['global_pos'])
             c = [0]
             pred_pose = []
             with torch.no_grad():
                 pred_pose = []
                 pred_true = []
-                for conditioning_disc_code in [0,1,2,3,4]:            
-                # for cont_val in np.linspace(-1, 1, 5):
+                for cond_code in cond_codes:
                     # conditioning_disc_code = 0
                     # state input
                     img_gt = []
@@ -144,11 +147,6 @@ def test(opt, device):
                     global_pos = sampled_batch['global_pos'].to(device)
 
                     lstm.init_hidden(current_batch_size)
-                    # InfoGAN code
-                    # infogan_disc_code_gen = torch.zeros(current_batch_size, infogan_disc_code)
-                    # infogan_disc_code_gen[:,conditioning_disc_code] = 1
-                    # infogan_cont_code_gen = torch.zeros(current_batch_size, infogan_cont_code)
-                    # infogan_cont_code_gen[:,conditioning_cont_code] = 0
                     if infogan_cont_code ==0 :
                         infogan_disc_code_gen = torch.zeros(current_batch_size, infogan_disc_code)
                         infogan_disc_code_gen[:,conditioning_disc_code] = 1
@@ -158,12 +156,18 @@ def test(opt, device):
                         infogan_cont_code_gen[:,conditioning_cont_code] = 0
                         infogan_code_gen = infogan_cont_code_gen
                     else :
-                        infogan_disc_code_gen = torch.zeros(current_batch_size, infogan_disc_code)
-                        infogan_disc_code_gen[:,conditioning_disc_code] = 1
-                        infogan_cont_code_gen = torch.zeros(current_batch_size, infogan_cont_code)
-                        infogan_cont_code_gen[:,conditioning_cont_code] = 0
-                        infogan_code_gen = torch.cat([infogan_disc_code_gen, infogan_cont_code_gen], dim=1)
-
+                        if control_latent == 'cond': 
+                            infogan_disc_code_gen = torch.zeros(current_batch_size, infogan_disc_code)
+                            infogan_disc_code_gen[:,conditioning_disc_code] = 1
+                            infogan_cont_code_gen = torch.zeros(current_batch_size, infogan_cont_code)
+                            infogan_cont_code_gen[:,conditioning_cont_code] = cond_code
+                            infogan_code_gen = torch.cat([infogan_disc_code_gen, infogan_cont_code_gen], dim=1)
+                        else : 
+                            infogan_disc_code_gen = torch.zeros(current_batch_size, infogan_disc_code)
+                            infogan_disc_code_gen[:,cond_code] = 1
+                            infogan_cont_code_gen = torch.zeros(current_batch_size, infogan_cont_code)
+                            infogan_cont_code_gen[:,conditioning_cont_code] = 0
+                            infogan_code_gen = torch.cat([infogan_disc_code_gen, infogan_cont_code_gen], dim=1)
                     lstm.h[0] = infogan_code_encoder(infogan_code_gen.to(torch.float))
 
                     training_frames = opt.training_frames
@@ -236,16 +240,11 @@ def test(opt, device):
                         pose_path = os.path.join(save_dir, f"{i_batch}")
                         Path(pose_path).mkdir(parents=True, exist_ok=True)
 
-                        # if t == 0: # root_pose[0] only root check
-                        #     write_json(filename=os.path.join(pose_path, f'start.json'), local_q=sampled_batch['local_q'][inference_batch_index][0].numpy(), root_pos=start_pose[0], joint_names=skeleton.joints)
-                        #     write_json(filename=os.path.join(pose_path, f'target.json'), local_q=sampled_batch['local_q'][inference_batch_index][-1].numpy(), root_pos=target_pose[0], joint_names=skeleton.joints)
-
-                        # write_json(filename=os.path.join(pose_path, f'{t:05}.json'), local_q=local_q_pred_t, root_pos=root_pred_t, joint_names=skeleton.joints)
                         pred_pose.append(in_between_pose)
                         pred_true.append(in_between_true)
                 if opt.plot :
                     for t in range(training_frames):
-                        plot_pose_compare2(start_pose, pred_pose[t], pred_pose[t+training_frames], pred_pose[t+2*training_frames], pred_pose[t+3*training_frames], pred_pose[t+4*training_frames], target_pose, t, skeleton, save_dir=save_dir, pred=True)
+                        plot_pose_compare5(start_pose, pred_pose[t], pred_pose[t+training_frames], pred_pose[t+2*training_frames], pred_pose[t+3*training_frames], pred_pose[t+4*training_frames], target_pose, t, skeleton, save_dir=save_dir, pred=True)
                         plot_pose(start_pose, pred_true[t], target_pose, t, skeleton, save_dir=save_dir, pred=False)
                         img_path = os.path.join(save_dir, 'results/tmp/')
                         Path(img_path).mkdir(parents=True, exist_ok=True)
@@ -259,7 +258,6 @@ def test(opt, device):
                     # if i_batch < 49:
                     gif_path = os.path.join(opt.save_dir, 'img'+str(conditioning_disc_code)+'__'+'cond'+str(conditioning_cont_code)+'_%02d.gif' % i_batch)
                     imageio.mimsave(gif_path, img_integrated, duration=0.1)
-            print('conditioning_cont_code', conditioning_cont_code)    
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
     parser.add_argument('--pretrained_weights', type=str, default=None, help='load weight .pt')
@@ -271,6 +269,7 @@ def parse_opt(known=False):
     parser.add_argument('--num_gifs', type=int, default=30, help='total batch size for all GPUs')
     parser.add_argument('--training_frames', type=int, default=30, help='total batch size for all GPUs')
     parser.add_argument('--inference_batch_index', type=int, default=20, help='total batch size for all GPUs')
+    parser.add_argument('--control_latent', type=str, default='disc', help='control latent code "disc"/"cont"')    
     parser.add_argument('--infogan_disc_code', type=int, default=2, help='total batch size for all GPUs')
     parser.add_argument('--infogan_cont_code', type=int, default=2, help='total batch size for all GPUs')
     parser.add_argument('--conditioning_disc_code', type=int, default=1, help='total batch size for all GPUs')
