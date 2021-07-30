@@ -113,7 +113,7 @@ def test(opt, device):
         for conditioning_cont_code in cond_cont_code:
 
             current_batch_size = len(sampled_batch['global_pos'])
-            c = np.linspace(-3, 3, 2)
+            c = np.linspace(-1, 1, 2)
             pred_pose = []
             with torch.no_grad():
                 pred_pose = []

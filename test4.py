@@ -17,7 +17,7 @@ from rmi.model.network import (Decoder, InfoGANDiscriminator, InfoganCodeEncoder
                                InputEncoder, LSTMNetwork, DInfoGAN,
                                QInfoGAN)
 from rmi.model.positional_encoding import PositionalEncoding
-from rmi.vis.pose import plot_pose, plot_pose_compare, plot_pose_compare2
+from rmi.vis.pose import plot_pose, plot_pose_compare, plot_pose_compare3
 from utils.general import increment_path
 from utils.torch_utils import select_device
 
@@ -119,9 +119,9 @@ def test(opt, device):
             with torch.no_grad():
                 pred_pose = []
                 pred_true = []
-                for conditioning_disc_code in [0,1,2,3,4]:            
-                # for cont_val in np.linspace(-1, 1, 5):
-                    # conditioning_disc_code = 0
+                # for conditioning_disc_code in [0,7,14]:            
+                for cont_val in np.linspace(-5, 5, 3):
+                    conditioning_disc_code = 1
                     # state input
                     img_gt = []
                     img_pred = []
@@ -145,10 +145,6 @@ def test(opt, device):
 
                     lstm.init_hidden(current_batch_size)
                     # InfoGAN code
-                    # infogan_disc_code_gen = torch.zeros(current_batch_size, infogan_disc_code)
-                    # infogan_disc_code_gen[:,conditioning_disc_code] = 1
-                    # infogan_cont_code_gen = torch.zeros(current_batch_size, infogan_cont_code)
-                    # infogan_cont_code_gen[:,conditioning_cont_code] = 0
                     if infogan_cont_code ==0 :
                         infogan_disc_code_gen = torch.zeros(current_batch_size, infogan_disc_code)
                         infogan_disc_code_gen[:,conditioning_disc_code] = 1
@@ -161,7 +157,7 @@ def test(opt, device):
                         infogan_disc_code_gen = torch.zeros(current_batch_size, infogan_disc_code)
                         infogan_disc_code_gen[:,conditioning_disc_code] = 1
                         infogan_cont_code_gen = torch.zeros(current_batch_size, infogan_cont_code)
-                        infogan_cont_code_gen[:,conditioning_cont_code] = 0
+                        infogan_cont_code_gen[:,conditioning_cont_code] = cont_val
                         infogan_code_gen = torch.cat([infogan_disc_code_gen, infogan_cont_code_gen], dim=1)
 
                     lstm.h[0] = infogan_code_encoder(infogan_code_gen.to(torch.float))
@@ -245,7 +241,7 @@ def test(opt, device):
                         pred_true.append(in_between_true)
                 if opt.plot :
                     for t in range(training_frames):
-                        plot_pose_compare2(start_pose, pred_pose[t], pred_pose[t+training_frames], pred_pose[t+2*training_frames], pred_pose[t+3*training_frames], pred_pose[t+4*training_frames], target_pose, t, skeleton, save_dir=save_dir, pred=True)
+                        plot_pose_compare3(start_pose, pred_pose[t], pred_pose[t+training_frames], pred_pose[t+2*training_frames], target_pose, t, skeleton, save_dir=save_dir, pred=True)
                         plot_pose(start_pose, pred_true[t], target_pose, t, skeleton, save_dir=save_dir, pred=False)
                         img_path = os.path.join(save_dir, 'results/tmp/')
                         Path(img_path).mkdir(parents=True, exist_ok=True)
@@ -274,7 +270,7 @@ def parse_opt(known=False):
     parser.add_argument('--infogan_disc_code', type=int, default=2, help='total batch size for all GPUs')
     parser.add_argument('--infogan_cont_code', type=int, default=2, help='total batch size for all GPUs')
     parser.add_argument('--conditioning_disc_code', type=int, default=1, help='total batch size for all GPUs')
-    parser.add_argument('--conditioning_cont_code', type=int, default=0, help='total batch size for all GPUs')    
+    parser.add_argument('--conditioning_cont_code', type=int, default=1, help='total batch size for all GPUs')    
     parser.add_argument('--plot', type=bool, default=True, help='plot motion images')
     parser.add_argument('--data_loader_workers', type=int, default=4, help='data_loader_workers')
     parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
