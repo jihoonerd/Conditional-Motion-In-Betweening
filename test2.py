@@ -40,7 +40,7 @@ def test(opt, device):
 
     # Load and preprocess data. It utilizes LAFAN1 utilities
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset_test = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=False, start_seq_length=30, cur_seq_length=30, max_transition_length=30, device=device)
+    lafan_dataset_test = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=False,  target_action='walk', start_seq_length=30, cur_seq_length=30, max_transition_length=30, device=device)
     lafan_data_loader_test = DataLoader(lafan_dataset_test, batch_size=opt.batch_size, shuffle=False, num_workers=opt.data_loader_workers)
 
     inference_batch_index = opt.inference_batch_index
