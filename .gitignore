@@ -14,7 +14,7 @@ wandb/
 processed_data/
 run_training.sh
 run_test.sh
-*.sh
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
