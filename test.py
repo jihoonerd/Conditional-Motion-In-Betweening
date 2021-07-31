@@ -20,7 +20,8 @@ from rmi.model.positional_encoding import PositionalEncoding
 from rmi.vis.pose import plot_pose
 from utils.general import increment_path
 from utils.torch_utils import select_device
-
+import matplotlib
+matplotlib.use('Agg')
 
 def test(opt, device):
 
