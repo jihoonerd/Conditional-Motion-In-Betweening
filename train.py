@@ -83,7 +83,7 @@ def train(opt,
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['jump', 'dance'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['jump', 'run'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     lafan_dataset.global_pos_std = lafan_dataset.data['global_pos_std']
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=batch_size, shuffle=True, num_workers=opt.data_loader_workers)
 
@@ -174,6 +174,9 @@ def train(opt,
         state_q_infogan = ckpt['q_infogan']
         state_q_infogan = intersect_dicts(state_q_infogan, q_infogan.state_dict(), exclude=exclude)
         q_infogan.load_state_dict(state_q_infogan, strict=False)
+        infogan_cont_code = ckpt['cont_code']
+        infogan_disc_code = ckpt['disc_code']
+        epoch = ckpt['epoch']
         # LOGGER.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
     else : 
         # Initializing networks
