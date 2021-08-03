@@ -176,7 +176,7 @@ def train(opt,
         q_infogan.load_state_dict(state_q_infogan, strict=False)
         infogan_cont_code = ckpt['cont_code']
         infogan_disc_code = ckpt['disc_code']
-        epoch = ckpt['epoch']
+        epochs = ckpt['epoch']
         # LOGGER.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
     else : 
         # Initializing networks
