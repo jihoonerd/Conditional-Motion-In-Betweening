@@ -20,7 +20,8 @@ from rmi.model.positional_encoding import PositionalEncoding
 from rmi.vis.pose import plot_pose
 from utils.general import increment_path
 from utils.torch_utils import select_device
-
+import matplotlib
+matplotlib.use('Agg')
 
 def test(opt, device):
 
@@ -32,6 +33,7 @@ def test(opt, device):
     infogan_disc_code = opt.infogan_disc_code
     conditioning_disc_code = opt.conditioning_disc_code
     conditioning_cont_code = opt.conditioning_cont_code
+    cont_value = opt.cont_value 
     save_dir = Path(save_dir)
 
     # Load Skeleton
@@ -97,6 +99,8 @@ def test(opt, device):
     state_dict_decoder = ckpt['decoder']
     decoder.load_state_dict(state_dict_decoder)
 
+    infogan_cont_code = ckpt['cont_code']
+    infogan_disc_code = ckpt['disc_code']
     pe = PositionalEncoding(dimension=256, max_len=lafan_dataset_test.max_transition_length)
 
     print("MODELS LOADED WITH SAVED WEIGHTS")
@@ -114,8 +118,8 @@ def test(opt, device):
         img_integrated = []
 
         current_batch_size = len(sampled_batch['global_pos'])
-
         with torch.no_grad():
+            
             # state input
             local_q = sampled_batch['local_q'].to(device)
             root_v = sampled_batch['root_v'].to(device)
@@ -138,7 +142,6 @@ def test(opt, device):
             infogan_disc_code_gen = torch.zeros(current_batch_size, infogan_disc_code)
             infogan_disc_code_gen[:,conditioning_disc_code] = 1
             infogan_cont_code_gen = torch.zeros(current_batch_size, infogan_cont_code)
-            cont_value = torch.Tensor(np.random.uniform(low=-1, high=1, size=current_batch_size))
             infogan_cont_code_gen[:,conditioning_cont_code] = cont_value
             infogan_code_gen = torch.cat([infogan_disc_code_gen, infogan_cont_code_gen], dim=1)
 
@@ -250,10 +253,11 @@ def parse_opt(known=False):
     parser.add_argument('--num_gifs', type=int, default=30, help='total batch size for all GPUs')
     parser.add_argument('--training_frames', type=int, default=30, help='total batch size for all GPUs')
     parser.add_argument('--inference_batch_index', type=int, default=20, help='total batch size for all GPUs')
-    parser.add_argument('--infogan_disc_code', type=int, default=2, help='total batch size for all GPUs')
-    parser.add_argument('--infogan_cont_code', type=int, default=2, help='total batch size for all GPUs')
-    parser.add_argument('--conditioning_disc_code', type=int, default=1, help='total batch size for all GPUs')
-    parser.add_argument('--conditioning_cont_code', type=int, default=1, help='total batch size for all GPUs')    
+    parser.add_argument('--infogan_disc_code', type=int, default=2, help='# infogan disc code')
+    parser.add_argument('--infogan_cont_code', type=int, default=2, help='# infogan cont code ')
+    parser.add_argument('--conditioning_disc_code', type=int, default=1, help='target conditioning_disc_code')
+    parser.add_argument('--conditioning_cont_code', type=int, default=1, help='target conditioning_cont_code')    
+    parser.add_argument('--cont_value', type=int, default=1, help='continuous value [-1, 1]')    
     parser.add_argument('--plot', type=bool, default=True, help='plot motion images')
     parser.add_argument('--data_loader_workers', type=int, default=4, help='data_loader_workers')
     parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
