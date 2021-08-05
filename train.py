@@ -83,7 +83,7 @@ def train(opt,
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action='walk', device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['jump', 'run'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     lafan_dataset.global_pos_std = lafan_dataset.data['global_pos_std']
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=batch_size, shuffle=True, num_workers=opt.data_loader_workers)
 
@@ -139,41 +139,44 @@ def train(opt,
         exclude = []
         
         #Load to FP32
-        state_dict_state_encoder = ckpt['state_encoder'].float().state_dict()  
+        state_dict_state_encoder = ckpt['state_encoder']
         state_dict_state_encoder = intersect_dicts(state_dict_state_encoder, state_encoder.state_dict(), exclude=exclude)  
         state_encoder.load_state_dict(state_dict_state_encoder, strict=False)  
 
-        state_dict_target_encoder = ckpt['target_encoder'].float().state_dict()  
+        state_dict_target_encoder = ckpt['target_encoder']
         state_dict_target_encoder = intersect_dicts(state_dict_target_encoder, target_encoder.state_dict(), exclude=exclude)  
         target_encoder.load_state_dict(state_dict_target_encoder, strict=False)  
-        
-        state_dict_offset_encoder = ckpt['offset_encoder'].float().state_dict() 
+
+        state_dict_offset_encoder = ckpt['offset_encoder']
         state_dict_offset_encoder = intersect_dicts(state_dict_offset_encoder, offset_encoder.state_dict(), exclude=exclude)  
         offset_encoder.load_state_dict(state_dict_offset_encoder, strict=False)  
 
-        state_infogan_code_encoder = ckpt['infogan_code_encoder'].float().state_dict()
+        state_infogan_code_encoder = ckpt['infogan_code_encoder']
         state_infogan_code_encoder = intersect_dicts(state_infogan_code_encoder, infogan_code_encoder.state_dict(), exclude=exclude)
         infogan_code_encoder.load_state_dict(state_infogan_code_encoder, strict=False)
         
-        state_dict_lstm = ckpt['lstm'].float().state_dict()  
+        state_dict_lstm = ckpt['lstm']
         state_dict_lstm = intersect_dicts(state_dict_lstm, lstm.state_dict(), exclude=exclude)  
         lstm.load_state_dict(state_dict_lstm, strict=False)  
 
-        state_dict_decoder = ckpt['decoder'].float().state_dict()  
+        state_dict_decoder = ckpt['decoder']
         state_dict_decoder = intersect_dicts(state_dict_decoder, decoder.state_dict(), exclude=exclude)  
         decoder.load_state_dict(state_dict_decoder, strict=False)  
         
-        state_infogan_discriminator = ckpt['infogan_discriminator'].float().state_dict()
+        state_infogan_discriminator = ckpt['infogan_discriminator']
         state_infogan_discriminator = intersect_dicts(state_infogan_discriminator, infogan_discriminator.state_dict(), exclude=exclude)
         infogan_discriminator.load_state_dict(state_infogan_discriminator, strict=False)
 
-        state_d_infogan = ckpt['d_infogan'].float().state_dict()
+        state_d_infogan = ckpt['d_infogan']
         state_d_infogan = intersect_dicts(state_d_infogan, d_infogan.state_dict(), exclude=exclude)
         d_infogan.load_state_dict(state_d_infogan, strict=False)
 
-        state_q_infogan = ckpt['q_infogan'].float().state_dict()
+        state_q_infogan = ckpt['q_infogan']
         state_q_infogan = intersect_dicts(state_q_infogan, q_infogan.state_dict(), exclude=exclude)
         q_infogan.load_state_dict(state_q_infogan, strict=False)
+        infogan_cont_code = ckpt['cont_code']
+        infogan_disc_code = ckpt['disc_code']
+        epochs = ckpt['epoch']
         # LOGGER.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
     else : 
         # Initializing networks

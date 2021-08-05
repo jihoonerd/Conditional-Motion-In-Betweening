@@ -168,7 +168,7 @@ def read_bvh(filename, start=None, end=None, order=None):
     return Anim(rotations, positions, offsets, parents, names)
 
 
-def get_lafan1_set(bvh_path, actors, action_name='', window=50, offset=20):
+def get_lafan1_set(bvh_path, actors, action_name, window=50, offset=20):
     """
     Extract the same test set as in the article, given the location of the BVH files.
 
@@ -200,32 +200,33 @@ def get_lafan1_set(bvh_path, actors, action_name='', window=50, offset=20):
             seq_name = file_info[0]
             subject = file_info[1]
             # seq_name, subject = ntpath.basename(file[:-4]).split("_")
-            if action_name in seq_name or action_name == '':
-                if subject in actors:
-                    print("Processing file {}".format(file))
-                    seq_path = os.path.join(bvh_path, file)
-                    anim = read_bvh(seq_path)
+            for action in action_name :
+               if action in seq_name or action == '':
+                    if subject in actors:
+                        print("Processing file {}".format(file))
+                        seq_path = os.path.join(bvh_path, file)
+                        anim = read_bvh(seq_path)
 
-                    # Sliding windows
-                    i = 0
-                    while i + window < anim.pos.shape[0]:
-                        q, x = utils.quat_fk(
-                            anim.quats[i : i + window],
-                            anim.pos[i : i + window],
-                            anim.parents,
-                        )
-                        # Extract contacts
-                        c_l, c_r = utils.extract_feet_contacts(
-                            x, [3, 4], [7, 8], velfactor=0.02
-                        )
-                        X.append(anim.pos[i : i + window])
-                        Q.append(anim.quats[i : i + window])
-                        seq_names.append(seq_name)
-                        subjects.append(subjects)
-                        contacts_l.append(c_l)
-                        contacts_r.append(c_r)
+                        # Sliding windows
+                        i = 0
+                        while i + window < anim.pos.shape[0]:
+                            q, x = utils.quat_fk(
+                                anim.quats[i : i + window],
+                                anim.pos[i : i + window],
+                                anim.parents,
+                            )
+                            # Extract contacts
+                            c_l, c_r = utils.extract_feet_contacts(
+                                x, [3, 4], [7, 8], velfactor=0.02
+                            )
+                            X.append(anim.pos[i : i + window])
+                            Q.append(anim.quats[i : i + window])
+                            seq_names.append(seq_name)
+                            subjects.append(subjects)
+                            contacts_l.append(c_l)
+                            contacts_r.append(c_r)
 
-                        i += offset
+                            i += offset
 
     X = np.asarray(X)
     Q = np.asarray(Q)
