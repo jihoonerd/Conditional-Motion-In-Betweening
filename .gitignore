@@ -11,7 +11,7 @@ lafan_train*.pkl
 runs/
 tb_old/
 wandb/
-processed_data/
+processed_data*/
 run_training.sh
 run_test.sh
 
