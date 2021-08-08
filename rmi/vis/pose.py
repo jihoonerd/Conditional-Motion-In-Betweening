@@ -33,7 +33,7 @@ def project_root_position(position_arr: np.array, file_name: str):
         else:
             plt.scatter(x_pos[:,i], y_pos[:,i], c='k', marker='*', s=1)
 
-    plt.title("Root Position")
+    plt.title(f"Root Position: {file_name}")
     plt.xlabel("X Axis")
     plt.ylabel("Y Axis")
     plt.xlim((-300,300))
