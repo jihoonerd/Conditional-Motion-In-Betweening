@@ -6,6 +6,47 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 
 
+def project_root_position(position_arr: np.array, file_name: str):
+    """
+    Take batch of root arrays and porject it on 2D plane
+
+    N: samples
+    L: trajectory length
+    J: joints
+
+    position_arr: [N,L,J,3]
+    """
+
+    root_joints = position_arr[:, :, 0]
+
+    x_pos = root_joints[:,:,0]
+    y_pos = root_joints[:,:,2]
+
+    fig = plt.figure()
+
+    for i in range(x_pos.shape[1]):
+        
+        if i == 0:
+            plt.scatter(x_pos[:,i], y_pos[:,i], c='b')
+        elif i == x_pos.shape[1] - 1:
+            plt.scatter(x_pos[:,i], y_pos[:,i], c='r')
+        else:
+            plt.scatter(x_pos[:,i], y_pos[:,i], c='k', marker='*', s=1)
+
+    plt.title("Root Position")
+    plt.xlabel("X Axis")
+    plt.ylabel("Y Axis")
+    plt.xlim((-300,300))
+    plt.ylim((-300,300))
+    plt.grid()
+    plt.savefig(f"{file_name}.png", dpi=200)
+
+
+
+
+
+    
+
 def plot_pose(
     start_pose, inbetween_pose, target_pose, frame_idx, skeleton, save_dir, pred=True
 ):
