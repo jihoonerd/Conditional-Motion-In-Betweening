@@ -39,6 +39,7 @@ def train(opt,
     save_dir, epochs, batch_size, weights, data_path, resume, noval, nosave, = \
         opt.save_dir, opt.epochs, opt.batch_size, opt.weights, opt.data_path, \
         opt.resume, opt.noval, opt.nosave
+
     # Directories
     save_dir = Path(save_dir)
     wdir = save_dir / 'weights'
@@ -59,6 +60,7 @@ def train(opt,
     # Set number of InfoGAN Code
     infogan_cont_code = opt.infogan_cont_code
     infogan_disc_code = opt.infogan_disc_code
+
     # Loggers
     loggers = {'wandb': None, 'tb': None}  # loggers dict
 
@@ -83,8 +85,7 @@ def train(opt,
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['jump', 'run'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
-    lafan_dataset.global_pos_std = lafan_dataset.data['global_pos_std']
+    lafan_dataset = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=batch_size, shuffle=True, num_workers=opt.data_loader_workers)
 
     # Extract dimension from processed data
@@ -109,12 +110,9 @@ def train(opt,
         target_encoder = InputEncoder(input_dim=target_in)
         target_encoder.to(device)
 
-        lstm_hidden = int(opt.lstm_hidden)
-        infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_cont_code + infogan_disc_code, out_dim=lstm_hidden)
-        infogan_code_encoder.to(device)
-
         # LSTM
-        lstm_in = state_encoder.out_dim * 3
+        lstm_hidden = int(opt.lstm_hidden)
+        lstm_in = state_encoder.out_dim * 3 + (infogan_disc_code + infogan_cont_code)
         lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
         lstm.to(device)
 
@@ -150,10 +148,6 @@ def train(opt,
         state_dict_offset_encoder = ckpt['offset_encoder']
         state_dict_offset_encoder = intersect_dicts(state_dict_offset_encoder, offset_encoder.state_dict(), exclude=exclude)  
         offset_encoder.load_state_dict(state_dict_offset_encoder, strict=False)  
-
-        state_infogan_code_encoder = ckpt['infogan_code_encoder']
-        state_infogan_code_encoder = intersect_dicts(state_infogan_code_encoder, infogan_code_encoder.state_dict(), exclude=exclude)
-        infogan_code_encoder.load_state_dict(state_infogan_code_encoder, strict=False)
         
         state_dict_lstm = ckpt['lstm']
         state_dict_lstm = intersect_dicts(state_dict_lstm, lstm.state_dict(), exclude=exclude)  
@@ -193,12 +187,9 @@ def train(opt,
         target_encoder = InputEncoder(input_dim=target_in)
         target_encoder.to(device)
 
-        lstm_hidden = int(opt.lstm_hidden)
-        infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_cont_code+infogan_disc_code, out_dim=lstm_hidden)
-        infogan_code_encoder.to(device)
-
         # LSTM
-        lstm_in = state_encoder.out_dim * 3
+        lstm_hidden = int(opt.lstm_hidden)
+        lstm_in = state_encoder.out_dim * 3 + (infogan_disc_code + infogan_cont_code)
         lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
         lstm.to(device)
 
@@ -240,12 +231,7 @@ def train(opt,
         v.requires_grad = True  # train all layers
         if any(x in k for x in freeze):
             print('freezing %s' % k)
-            v.requires_grad = False
-    for k, v in infogan_code_encoder.named_parameters():
-        v.requires_grad = True  # train all layers
-        if any(x in k for x in freeze):
-            print('freezing %s' % k)
-            v.requires_grad = False            
+            v.requires_grad = False    
     for k, v in lstm.named_parameters():
         v.requires_grad = True  # train all layers
         if any(x in k for x in freeze):
@@ -273,14 +259,11 @@ def train(opt,
             v.requires_grad = False
  
 
-
-
     # Try amsgrad True / False 
     # https://tgd.kr/c/deeplearning/19860071
     generator_optimizer = Adam(params=list(state_encoder.parameters()) + 
                                       list(offset_encoder.parameters()) + 
                                       list(target_encoder.parameters()) +
-                                      list(infogan_code_encoder.parameters()) +
                                       list(lstm.parameters()) +
                                       list(decoder.parameters()) + 
                                       list(q_infogan.parameters()),
@@ -359,9 +342,6 @@ def train(opt,
             # InfoGAN code (per motion)
             infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=infogan_disc_code, continuous_code_dim=infogan_cont_code, device=device)
             
-            lstm.h[0] = infogan_code_encoder(infogan_code_gen.to(torch.float))
-            assert lstm.h[0].shape == (current_batch_size, lstm_hidden)
-
             # Generating Frames
             training_frames = torch.randint(low=lafan_dataset.start_seq_length, high=lafan_dataset.cur_seq_length + 1, size=(1,))[0]
 
@@ -375,10 +355,6 @@ def train(opt,
             real_q_cur_list = []
 
             real_contact_cur_list = []
-            
-            real_root_noise_dist = Normal(loc=torch.zeros(3, device=device), scale=0.1)
-            real_quaternion_noise_dist = Normal(loc=torch.zeros(88, device=device), scale=0.03)
-
                 
             with amp.autocast(enabled=cuda):
                 for t in range(training_frames):
@@ -422,9 +398,8 @@ def train(opt,
                     offset_target = torch.cat([h_offset, h_target], dim=1)
 
                     # lstm
-                    h_in = torch.cat([h_state, offset_target], dim=1).unsqueeze(0)
+                    h_in = torch.cat([h_state, offset_target, infogan_code_gen], dim=1).unsqueeze(0)
                     h_out = lstm(h_in)
-
 
                     # decoder
                     h_pred, contact_pred = decoder(h_out)
@@ -572,7 +547,6 @@ def train(opt,
             torch.nn.utils.clip_grad_norm_(state_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(offset_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(target_encoder.parameters(), 1.0)
-            torch.nn.utils.clip_grad_norm_(infogan_code_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(lstm.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(decoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(q_infogan.parameters(), 1.0)
@@ -606,7 +580,6 @@ def train(opt,
                     'state_encoder': state_encoder.state_dict(),
                     'target_encoder': target_encoder.state_dict(),
                     'offset_encoder': offset_encoder.state_dict(),
-                    'infogan_code_encoder': infogan_code_encoder.state_dict(),
                     'lstm': lstm.state_dict(),
                     'decoder': decoder.state_dict(),
                     'infogan_discriminator': infogan_discriminator.state_dict(),

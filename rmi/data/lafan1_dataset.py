@@ -36,6 +36,7 @@ class LAFAN1Dataset(Dataset):
         if pickle_name in os.listdir(processed_data_dir):
             with open(os.path.join(processed_data_dir, pickle_name), 'rb') as f:
                 self.data = pickle.load(f)
+                self.global_pos_std = self.data["global_pos_std"].to(self.device)
         else: 
             self.data = self.load_lafan()  # Call this last
             with open(os.path.join(processed_data_dir, pickle_name), 'wb') as f:
