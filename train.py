@@ -85,7 +85,7 @@ def train(opt,
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['walk', 'dance', 'jump'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     lafan_data_loader = DataLoader(lafan_dataset, batch_size=batch_size, shuffle=True, num_workers=opt.data_loader_workers)
 
     # Extract dimension from processed data

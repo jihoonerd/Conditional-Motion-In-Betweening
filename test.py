@@ -42,7 +42,7 @@ def test(opt, device):
 
     # Load and preprocess data. It utilizes LAFAN1 utilities
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset_test = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=False, target_action='walk', start_seq_length=30, cur_seq_length=30, max_transition_length=30, device=device)
+    lafan_dataset_test = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=False, target_action=['walk','dance','jump'], start_seq_length=30, cur_seq_length=30, max_transition_length=30, device=device)
     lafan_data_loader_test = DataLoader(lafan_dataset_test, batch_size=opt.batch_size, shuffle=False, num_workers=opt.data_loader_workers)
 
     inference_batch_index = opt.inference_batch_index
@@ -67,12 +67,9 @@ def test(opt, device):
     target_encoder = InputEncoder(input_dim=target_in)
     target_encoder.to(device)
 
-    lstm_hidden = opt.lstm_hidden
-    infogan_code_encoder = InfoganCodeEncoder(input_dim=infogan_cont_code + infogan_disc_code, out_dim=lstm_hidden)
-    infogan_code_encoder.to(device)
-
     # LSTM
-    lstm_in = state_encoder.out_dim * 3
+    lstm_hidden = opt.lstm_hidden
+    lstm_in = state_encoder.out_dim * 3 + (infogan_disc_code + infogan_cont_code)
     lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
     lstm.to(device)
 
@@ -90,9 +87,6 @@ def test(opt, device):
     state_dict_offset_encoder = ckpt['offset_encoder']
     offset_encoder.load_state_dict(state_dict_offset_encoder)  
 
-    state_dict_infogan_code_encoder = ckpt['infogan_code_encoder']
-    infogan_code_encoder.load_state_dict(state_dict_infogan_code_encoder) 
-
     state_dict_lstm = ckpt['lstm']
     lstm.load_state_dict(state_dict_lstm)  
 
@@ -108,7 +102,6 @@ def test(opt, device):
     state_encoder.eval()
     offset_encoder.eval()
     target_encoder.eval()
-    infogan_code_encoder.eval()
     lstm.eval()
     decoder.eval()
     
@@ -144,8 +137,6 @@ def test(opt, device):
             infogan_cont_code_gen = torch.zeros(current_batch_size, infogan_cont_code)
             infogan_cont_code_gen[:,conditioning_cont_code] = cont_value
             infogan_code_gen = torch.cat([infogan_disc_code_gen, infogan_cont_code_gen], dim=1)
-
-            lstm.h[0] = infogan_code_encoder(infogan_code_gen.to(torch.float))
 
             training_frames = opt.training_frames
             for t in range(training_frames):
@@ -186,7 +177,7 @@ def test(opt, device):
                 offset_target = torch.cat([h_offset, h_target], dim=1)
 
                 # lstm
-                h_in = torch.cat([h_state, offset_target], dim=1).unsqueeze(0)
+                h_in = torch.cat([h_state, offset_target, infogan_code_gen], dim=1).unsqueeze(0)
                 h_out = lstm(h_in)
             
                 # decoder
