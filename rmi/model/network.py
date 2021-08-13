@@ -117,7 +117,7 @@ class NDiscriminator(nn.Module):
         self.sigmoid = nn.Sigmoid()
     
     def forward(self, x):
-        x = self.sigmoid(self.regular_gan(x))
+        x = self.regular_gan(x)
         return x
 
 class QDiscriminator(nn.Module):
@@ -176,11 +176,9 @@ class DInfoGAN(nn.Module):
             nn.ReLU(),
             nn.Linear(input_dim, 1)
         )
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         out = self.conv_to_gan(x)
-        out = self.sigmoid(out)
         return out
 
 class QInfoGAN(nn.Module):
