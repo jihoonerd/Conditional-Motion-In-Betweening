@@ -1,8 +1,46 @@
 import torch
-import torch.nn as nn
+from torch import nn, Tensor
 from torch.nn.modules.activation import ReLU
 from rmi.model.plu import PLU
 import torch.nn.functional as F
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
+from rmi.model.positional_encoding import PositionalEncoding
+import math
+
+
+
+class TransformerModel(nn.Module):
+
+    def __init__(self, d_model: int, nhead: int, d_hid: int,
+                 nlayers: int, dropout: float = 0.5):
+        super().__init__()
+        self.model_type = 'Transformer'
+        self.pos_encoder = PositionalEncoding(d_model, dropout)
+        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout)
+        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
+        self.d_model = d_model
+        self.decoder = nn.Linear(d_model, 91)
+
+        self.init_weights()
+
+    def init_weights(self) -> None:
+        initrange = 0.1
+        self.decoder.bias.data.zero_()
+        self.decoder.weight.data.uniform_(-initrange, initrange)
+
+    def forward(self, src: Tensor, src_mask: Tensor) -> Tensor:
+        """
+        Args:
+            src: Tensor, shape [seq_len, batch_size]
+            src_mask: Tensor, shape [seq_len, seq_len]
+
+        Returns:
+            output Tensor of shape [seq_len, batch_size, ntoken]
+        """
+        src = self.pos_encoder(src)
+        output = self.transformer_encoder(src, src_mask)
+        output = self.decoder(output)
+        return output
 
 
 class InputEncoder(nn.Module):
