@@ -1,12 +1,12 @@
-python3 train.py --batch_size=128 \
-	--exp_name=0801_D2C1_DJ \
+python3 train_tfmodel.py \
+	--batch_size=8 \
+	--epochs=2000 \
+	--device=1 \
 	--entity=rilab-motion \
-	--infogan_cont_code=1 \
-	--infogan_disc_code=2 \
-	--loss_pos_weight=0.5 \
-	--loss_quat_weight=1.0 \
-	--loss_root_weight=1.0 \
-	--loss_contact_weight=0.3 \
-	--loss_generator_weight=0.1 \
-	--loss_mi_weight=1 \
-	--loss_discriminator_weight=1.0 
+	--exp_name="bert-based" \
+	--save_interval=50 \
+	--generator_learning_rate=0.001 \
+	--optim_beta1=0.5 \
+	--optim_beta2=0.9 \
+	--loss_root_weight=0.01 \
+	--loss_quat_weight=1.0
