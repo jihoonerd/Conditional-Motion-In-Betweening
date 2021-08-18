@@ -10,8 +10,8 @@ def vectorize_pose(sampled_batch):
     # Should have (Seq len, Batch size, Embedding dim)
     root_p = sampled_batch['root_p'].permute(1,0,2) 
     local_q = sampled_batch['local_q'].reshape(batch_size, seq_len, -1).permute(1, 0, 2)
-
-    out = torch.cat([root_p, local_q], dim=2)
+    dummy = torch.zeros([seq_len, batch_size, 5])
+    out = torch.cat([root_p, local_q, dummy], dim=2)
     return out
 
 
