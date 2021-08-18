@@ -1,16 +1,18 @@
 import torch
 
-def vectorize_pose(sampled_batch):
+def vectorize_pose(root_p, local_q, vector_dim, device):
     """Reshape root_p and local_q to match with transformer src dimension
     
     Returns: root_p, local_q
     """
-    batch_size, seq_len = sampled_batch['local_q'].shape[0], sampled_batch['local_q'].shape[1]
+    batch_size, seq_len = local_q.shape[0], local_q.shape[1]
 
     # Should have (Seq len, Batch size, Embedding dim)
-    root_p = sampled_batch['root_p'].permute(1,0,2) 
-    local_q = sampled_batch['local_q'].reshape(batch_size, seq_len, -1).permute(1, 0, 2)
-    dummy = torch.zeros([seq_len, batch_size, 5])
+    root_p = root_p.permute(1,0,2) 
+    local_q = local_q.reshape(batch_size, seq_len, -1).permute(1, 0, 2)
+
+    padding_dim = vector_dim - (root_p.shape[-1] + local_q.shape[-1])
+    dummy = torch.zeros([seq_len, batch_size, padding_dim], device=device)
     out = torch.cat([root_p, local_q, dummy], dim=2)
     return out
 
