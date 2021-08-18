@@ -4,32 +4,24 @@ import os
 import sys
 import time
 from pathlib import Path
-import wandb
-import numpy as np
+
 import torch
 import torch.nn as nn
+import wandb
 import yaml
 from kpt.model.skeleton import TorchSkeleton
 from pymo.parsers import BVHParser
 from torch.cuda import amp
-from torch.distributions.normal import Normal
 from torch.optim import Adam
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
-from rmi.model.preprocess import vectorize_pose, create_mask
-from rmi.data.utils import flip_bvh, generate_infogan_code
-from rmi.model.network import (Decoder, InfoganCodeEncoder, DInfoGAN, QInfoGAN,
-                               InfoGANDiscriminator, InputEncoder, LSTMNetwork, TransformerModel)
-from rmi.model.positional_encoding import PositionalEncoding
-from utils.general import colorstr, get_latest_run, increment_path
-from utils.torch_utils import de_parallel, intersect_dicts, select_device
-from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
-
-FILE = Path(__file__).absolute()
-sys.path.append(FILE.parents[0].as_posix())
+from rmi.data.utils import flip_bvh
+from rmi.model.network import TransformerModel
+from rmi.model.preprocess import create_mask, vectorize_pose
+from utils.general import increment_path
 
 LOGGER = logging.getLogger(__name__)
 
@@ -64,13 +56,19 @@ def train(opt, device):
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
     lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
-    lafan_data_loader = DataLoader(lafan_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.data_loader_workers)
+    
+    global_pos = torch.Tensor(lafan_dataset.data["global_pos"]).to(device)
+    root_p = torch.Tensor(lafan_dataset.data["root_p"]).to(device)
+    local_q = torch.Tensor(lafan_dataset.data["local_q"]).to(device)
+
+    tensor_dataset = TensorDataset(global_pos, root_p, local_q)
+    lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
 
     # Extract dimension from processed data
     root_v_dim = lafan_dataset.root_v_dim
     local_q_dim = lafan_dataset.local_q_dim
 
-    transformer_encoder = nn.DataParallel(TransformerModel(d_model=96, nhead=8, d_hid=2048, nlayers=8, dropout=0.05), device_ids=[0,1])
+    transformer_encoder = TransformerModel(d_model=96, nhead=8, d_hid=2048, nlayers=10, dropout=0.05, out_dim=91)
     transformer_encoder.to(device)
 
     l1_loss = nn.L1Loss()
@@ -83,22 +81,17 @@ def train(opt, device):
 
         pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
 
-        for sampled_batch in pbar:
-            current_batch_size = sampled_batch['global_pos'].shape[0]
-            seq_len = sampled_batch['global_pos'].shape[1]
-            global_pos = sampled_batch['global_pos'].to(device)
+        for global_pos_batch, root_p_batch, local_q_batch in pbar:
 
-            fk_loss = 0
-
-            pose_vectorized = vectorize_pose(sampled_batch).to(device)
+            pose_vectorized = vectorize_pose(root_p_batch, local_q_batch, 96, device)
 
             mask_start, mask_end = 10, 49
             src_mask, _ = create_mask(pose_vectorized, device, mask_start=mask_start, mask_end=mask_end)
             src_mask = src_mask.to(device)
 
+            # TODO: FK takes too much time. Need to make batch-FK
             pose_masked = pose_vectorized.clone()
             pose_masked[mask_start:mask_end,:,:] = 0
-
 
             optim.zero_grad()
             with amp.autocast(enabled=cuda):
@@ -113,16 +106,8 @@ def train(opt, device):
                 root_loss = l1_loss(root_pred, root_gt)
                 quat_loss = l1_loss(quat_pred, quat_gt)
 
-                for t in range(seq_len):
-                    root_fk = root_pred[:,t]
-                    quat_fk = quat_pred[:,t].reshape(current_batch_size, lafan_dataset.num_joints, 4)
-                    pos_pred, _ = skeleton.forward_kinematics(root_fk, quat_fk, rot_repr='quaternion')
-                    
-                    fk_loss += l1_loss(pos_pred, global_pos[:,t])
-
                 total_g_loss = opt.loss_root_weight * root_loss + \
-                               opt.loss_quat_weight * quat_loss + \
-                               opt.loss_fk_weight * fk_loss
+                               opt.loss_quat_weight * quat_loss
 
             scaler.scale(total_g_loss).backward()
             scaler.unscale_(optim)
@@ -134,7 +119,7 @@ def train(opt, device):
         log_dict = {
             "Train/LOSS/Root Loss": opt.loss_root_weight * root_loss, 
             "Train/LOSS/Quaternion Loss": opt.loss_quat_weight * quat_loss, 
-            "Train/LOSS/FK Loss": opt.loss_fk_weight * fk_loss, 
+            "Train/LOSS/Total Loss": total_g_loss
         }
 
         for k, v in log_dict.items():
@@ -146,7 +131,7 @@ def train(opt, device):
             ckpt = {'epoch': epoch,
                     'transformer_encoder': transformer_encoder.state_dict()}
             torch.save(ckpt, os.path.join(wdir, f'train-{epoch}.pt'))
-            print("f{epoch} Epoch: model weights saved")
+            print(f"{epoch} Epoch: model weights saved")
 
     wandb.run.finish()
     torch.cuda.empty_cache()
@@ -159,21 +144,17 @@ def parse_opt(known=False):
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data/', help='path to save pickled processed data')
-    parser.add_argument('--batch_size', type=int, default=64, help='batch size')
-    parser.add_argument('--epochs', type=int, default=300)
-    parser.add_argument('--data_loader_workers', type=int, default=4, help='data_loader_workers')
-    parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
+    parser.add_argument('--batch_size', type=int, default=8, help='batch size')
+    parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--device', default='1', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
-    parser.add_argument('--save_interval', type=int, default=1, help='Log model after every "save_period" epoch')
-    parser.add_argument('--save_optimizer', type=bool, default=False, help='bool save_optimizer')
+    parser.add_argument('--save_interval', type=int, default=50, help='Log model after every "save_period" epoch')
     parser.add_argument('--generator_learning_rate', type=float, default=0.001, help='generator_learning_rate')
     parser.add_argument('--optim_beta1', type=float, default=0.5, help='optim_beta1')
     parser.add_argument('--optim_beta2', type=float, default=0.9, help='optim_beta2')
     parser.add_argument('--loss_root_weight', type=float, default=0.01, help='loss_pos_weight')
     parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
-    parser.add_argument('--loss_fk_weight', type=float, default=0.0001, help='loss_root_weight')
     opt = parser.parse_args()
     return opt
 

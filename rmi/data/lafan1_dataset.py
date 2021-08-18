@@ -36,7 +36,6 @@ class LAFAN1Dataset(Dataset):
         if pickle_name in os.listdir(processed_data_dir):
             with open(os.path.join(processed_data_dir, pickle_name), 'rb') as f:
                 self.data = pickle.load(f)
-                self.global_pos_std = self.data["global_pos_std"].to(self.device)
         else: 
             self.data = self.load_lafan()  # Call this last
             with open(os.path.join(processed_data_dir, pickle_name), 'wb') as f:
@@ -69,9 +68,6 @@ class LAFAN1Dataset(Dataset):
         # Retrieve global representations. (global quaternion, global positions)
         _, global_pos = utils.quat_fk(Q, X, parents)
 
-        # Extract std to scale position (refer to: 3.7.3: we scale all our losses...)
-        self.global_pos_std = torch.Tensor(global_pos.std(axis=(0, 1))).to(self.device)
-
         input_data = {}
         input_data["local_q"] = Q  # q_{t}
         input_data["local_q_offset"] = Q[:, -1, :, :]  # lasst frame's quaternions
@@ -91,8 +87,6 @@ class LAFAN1Dataset(Dataset):
         input_data["global_pos"] = global_pos[
             :, :, :, :
         ]  # global position (N, 50, 22, 30) why not just global_pos
-        
-        input_data["global_pos_std"] = self.global_pos_std
         return input_data
 
     def __len__(self):
