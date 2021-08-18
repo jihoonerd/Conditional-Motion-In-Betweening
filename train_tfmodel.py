@@ -137,7 +137,7 @@ def train(opt, device):
     torch.cuda.empty_cache()
 
 
-def parse_opt(known=False):
+def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
     parser.add_argument('--weights', type=str, default='', help='weights path')
