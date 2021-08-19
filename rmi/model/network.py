@@ -31,11 +31,11 @@ class TransformerModel(nn.Module):
     def forward(self, src: Tensor, src_mask: Tensor) -> Tensor:
         """
         Args:
-            src: Tensor, shape [seq_len, batch_size]
+            src: Tensor, shape [seq_len, batch_size, embedding_dim]
             src_mask: Tensor, shape [seq_len, seq_len]
 
         Returns:
-            output Tensor of shape [seq_len, batch_size, ntoken]
+            output Tensor of shape [seq_len, batch_size, embedding_dim]
         """
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, src_mask)

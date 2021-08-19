@@ -20,7 +20,7 @@ from tqdm import tqdm
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import create_mask, vectorize_pose
+from rmi.model.preprocess import create_mask, vectorize_pose, lerp_pose
 from utils.general import increment_path
 
 LOGGER = logging.getLogger(__name__)
@@ -55,20 +55,22 @@ def train(opt, device):
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['walk'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     
-    global_pos = torch.Tensor(lafan_dataset.data["global_pos"]).to(device)
-    root_p = torch.Tensor(lafan_dataset.data["root_p"]).to(device)
-    local_q = torch.Tensor(lafan_dataset.data["local_q"]).to(device)
+    # LERP In-betweening Frames
+    root_lerped, local_q_lerped = lerp_pose(lafan_dataset.data, from_idx=10, target_idx=40)
 
-    tensor_dataset = TensorDataset(global_pos, root_p, local_q)
+    pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], 96, device)
+    pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, 96, device)
+
+    tensor_dataset = TensorDataset(pose_vectorized_lerp, pose_vectorized_gt)
     lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
 
     # Extract dimension from processed data
     root_v_dim = lafan_dataset.root_v_dim
     local_q_dim = lafan_dataset.local_q_dim
 
-    transformer_encoder = TransformerModel(d_model=96, nhead=8, d_hid=2048, nlayers=10, dropout=0.05, out_dim=91)
+    transformer_encoder = TransformerModel(d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=91)
     transformer_encoder.to(device)
 
     l1_loss = nn.L1Loss()
@@ -81,27 +83,26 @@ def train(opt, device):
 
         pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
 
-        for global_pos_batch, root_p_batch, local_q_batch in pbar:
+        for pose_vectorized_lerp, pose_vectorized_gt in pbar:
 
-            pose_vectorized = vectorize_pose(root_p_batch, local_q_batch, 96, device)
+            pose_vectorized_gt = pose_vectorized_gt.permute(1,0,2)
+            pose_vectorized_lerp = pose_vectorized_lerp.permute(1,0,2)
 
             mask_start, mask_end = 10, 49
-            src_mask, _ = create_mask(pose_vectorized, device, mask_start=mask_start, mask_end=mask_end)
+            src_mask, _ = create_mask(pose_vectorized_lerp, device, mask_start=mask_start, mask_end=mask_end)
             src_mask = src_mask.to(device)
 
             # TODO: FK takes too much time. Need to make batch-FK
-            pose_masked = pose_vectorized.clone()
-            pose_masked[mask_start:mask_end,:,:] = 0
 
             optim.zero_grad()
             with amp.autocast(enabled=cuda):
-                output = transformer_encoder(pose_masked, src_mask)
+                output = transformer_encoder(pose_vectorized_lerp, src_mask)
 
                 root_pred = output[:,:,:root_v_dim].permute(1,0,2)
                 quat_pred = output[:,:,root_v_dim:].permute(1,0,2)
 
-                root_gt = pose_vectorized[:,:,:root_v_dim].permute(1,0,2)
-                quat_gt = pose_vectorized[:,:,root_v_dim: root_v_dim + local_q_dim].permute(1,0,2)
+                root_gt = pose_vectorized_gt[:,:,:root_v_dim].permute(1,0,2)
+                quat_gt = pose_vectorized_gt[:,:,root_v_dim: root_v_dim + local_q_dim].permute(1,0,2)
 
                 root_loss = l1_loss(root_pred, root_gt)
                 quat_loss = l1_loss(quat_pred, quat_gt)
@@ -129,7 +130,9 @@ def train(opt, device):
         # Save model
         if (epoch % save_interval) == 0:
             ckpt = {'epoch': epoch,
-                    'transformer_encoder': transformer_encoder.state_dict()}
+                    'transformer_encoder_state_dict': transformer_encoder.state_dict(),
+                    'optimizer_state_dict': optim.state_dict(),
+                    'loss': total_g_loss}
             torch.save(ckpt, os.path.join(wdir, f'train-{epoch}.pt'))
             print(f"{epoch} Epoch: model weights saved")
 
