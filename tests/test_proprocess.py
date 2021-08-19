@@ -1,8 +1,18 @@
-from rmi.model.preprocess import vectorize_pose, create_mask
+from rmi.model.preprocess import vectorize_pose, create_mask, lerp_pose
 import numpy as np
 import torch
 
 device = torch.device("cpu")
+
+def test_lerp_pose():
+    root_p = np.random.randn(64, 50, 3)
+    local_q = np.random.randn(64, 50, 22, 4)
+
+    dataset = {'local_q': local_q, 'root_p': root_p}
+    root_p_lerped, local_q_lerped = lerp_pose(dataset, from_idx=10, target_idx=40)
+
+    assert (root_p[:,11:40,:] != root_p_lerped[:,11:40,:]).all()
+
 
 def test_vectorize_pose():
     pose_local_q = torch.randn((64, 50, 22, 4))
