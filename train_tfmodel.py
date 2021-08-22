@@ -53,7 +53,7 @@ def train(opt, device):
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['walk'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     
     # LERP In-betweening Frames
     from_idx, target_idx = 9, 39
@@ -156,7 +156,7 @@ def parse_opt():
     parser.add_argument('--weights', type=str, default='', help='weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data/', help='path to save pickled processed data')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
     parser.add_argument('--batch_size', type=int, default=128, help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or -1 or cpu')
@@ -168,7 +168,7 @@ def parse_opt():
     parser.add_argument('--optim_beta2', type=float, default=0.9, help='optim_beta2')
     parser.add_argument('--loss_root_weight', type=float, default=0.01, help='loss_pos_weight')
     parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
-    parser.add_argument('--loss_contact_weight', type=float, default=1.0, help='loss_contact_weight')
+    parser.add_argument('--loss_contact_weight', type=float, default=0.2, help='loss_contact_weight')
     parser.add_argument('--use_fk_loss', action='store_true')
     opt = parser.parse_args()
     return opt
