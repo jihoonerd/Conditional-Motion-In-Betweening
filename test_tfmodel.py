@@ -35,13 +35,16 @@ def test(opt, device):
     from_idx, target_idx = 9, 39
     horizon = target_idx - from_idx
     root_lerped, local_q_lerped = lerp_pose(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
+    contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
-    pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], 96, device)[:,from_idx:target_idx,:]
-    pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, 96, device)[:,from_idx:target_idx,:]
+    pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)[:,from_idx:target_idx,:]
+    pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, contact_init, 96, device)[:,from_idx:target_idx,:]
 
     # Extract dimension from processed data
     root_v_dim = lafan_dataset.root_v_dim
     local_q_dim = lafan_dataset.local_q_dim
+    contact_dim = lafan_dataset.contact_dim
+    repr_dim = root_v_dim + local_q_dim + contact_dim
 
     pose_vectorized_gt = pose_vectorized_gt.permute(1,0,2)
     pose_vectorized_lerp = pose_vectorized_lerp.permute(1,0,2)
@@ -51,14 +54,14 @@ def test(opt, device):
 
     test_idx = [4,5,6]
 
-    model = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=91, device=device)
+    model = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim, device=device)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
     output = model(pose_vectorized_lerp, src_mask)
 
     root_pred = output[:,test_idx,:root_v_dim].permute(1,0,2)
-    quat_pred = output[:,test_idx,root_v_dim:].permute(1,0,2)
+    quat_pred = output[:,test_idx,root_v_dim:root_v_dim+local_q_dim].permute(1,0,2)
 
     global_pos_preds = []
     global_pos_lerps = []
@@ -106,10 +109,10 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--ckpt_path', type=str, default='train-1500.pt', help='weights path')
+    parser.add_argument('--ckpt_path', type=str, default='train-800.pt', help='weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data/', help='path to save pickled processed data')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_walk/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
     opt = parser.parse_args()
     return opt
