@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-def lerp_pose(data, from_idx=10, target_idx=40):
+def lerp_pose(data, from_idx=9, target_idx=39):
     """
     Make linear interpolation in [from_idx, target_idx].
     """
