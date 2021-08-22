@@ -1,13 +1,10 @@
 import argparse
 import logging
 import os
-import sys
-import time
 from pathlib import Path
 
 import torch
 import torch.nn as nn
-import wandb
 import yaml
 from kpt.model.skeleton import TorchSkeleton
 from pymo.parsers import BVHParser
@@ -17,10 +14,11 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
+import wandb
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import create_mask, vectorize_pose, lerp_pose
+from rmi.model.preprocess import lerp_pose, vectorize_pose
 from utils.general import increment_path
 
 LOGGER = logging.getLogger(__name__)
@@ -58,10 +56,12 @@ def train(opt, device):
     lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['walk'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     
     # LERP In-betweening Frames
-    root_lerped, local_q_lerped = lerp_pose(lafan_dataset.data, from_idx=10, target_idx=40)
+    from_idx, target_idx = 9, 39
+    horizon = target_idx - from_idx
+    root_lerped, local_q_lerped = lerp_pose(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
 
-    pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], 96, device)
-    pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, 96, device)
+    pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], 96, device)[:,from_idx:target_idx,:]
+    pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, 96, device)[:,from_idx:target_idx,:]
 
     tensor_dataset = TensorDataset(pose_vectorized_lerp, pose_vectorized_gt)
     lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
@@ -70,7 +70,7 @@ def train(opt, device):
     root_v_dim = lafan_dataset.root_v_dim
     local_q_dim = lafan_dataset.local_q_dim
 
-    transformer_encoder = TransformerModel(d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=91)
+    transformer_encoder = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=91, device=device)
     transformer_encoder.to(device)
 
     l1_loss = nn.L1Loss()
@@ -88,12 +88,11 @@ def train(opt, device):
             pose_vectorized_gt = pose_vectorized_gt.permute(1,0,2)
             pose_vectorized_lerp = pose_vectorized_lerp.permute(1,0,2)
 
-            mask_start, mask_end = 10, 49
-            src_mask, _ = create_mask(pose_vectorized_lerp, device, mask_start=mask_start, mask_end=mask_end)
+            seq_len = pose_vectorized_lerp.shape[0]
+            src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
             src_mask = src_mask.to(device)
 
             # TODO: FK takes too much time. Need to make batch-FK
-
             optim.zero_grad()
             with amp.autocast(enabled=cuda):
                 output = transformer_encoder(pose_vectorized_lerp, src_mask)
@@ -147,9 +146,9 @@ def parse_opt():
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data/', help='path to save pickled processed data')
-    parser.add_argument('--batch_size', type=int, default=8, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=128, help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--device', default='1', help='cuda device, i.e. 0 or -1 or cpu')
+    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=50, help='Log model after every "save_period" epoch')
@@ -158,6 +157,7 @@ def parse_opt():
     parser.add_argument('--optim_beta2', type=float, default=0.9, help='optim_beta2')
     parser.add_argument('--loss_root_weight', type=float, default=0.01, help='loss_pos_weight')
     parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
+    parser.add_argument('--use_fk_loss', action='store_true')
     opt = parser.parse_args()
     return opt
 

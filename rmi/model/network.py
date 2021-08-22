@@ -11,11 +11,12 @@ import math
 
 class TransformerModel(nn.Module):
 
-    def __init__(self, d_model: int, nhead: int, d_hid: int,
-                 nlayers: int, dropout: float = 0.5, out_dim=91):
+    def __init__(self, seq_len: int, d_model: int, nhead: int, d_hid: int,
+                 nlayers: int, dropout: float = 0.5, out_dim=91, device='cpu'):
         super().__init__()
         self.model_type = 'Transformer'
-        self.pos_encoder = PositionalEncoding(d_model, dropout)
+        self.seq_len = seq_len
+        self.pos_encoder = PositionalEncoding(d_model, dropout, max_len=seq_len)
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.d_model = d_model
