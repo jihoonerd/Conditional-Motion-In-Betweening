@@ -48,7 +48,7 @@ def project_root_position(position_arr: np.array, file_name: str):
     
 
 def plot_pose(
-    start_pose, inbetween_pose, target_pose, frame_idx, skeleton, save_dir, pred=True
+    start_pose, inbetween_pose, target_pose, frame_idx, skeleton, save_dir, prefix,
 ):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
@@ -114,12 +114,11 @@ def plot_pose(
 
     plt.draw()
 
-    title = f"Generated: {frame_idx}" if pred else f"Ground Truth {frame_idx}"
+    title = f"{prefix}: {frame_idx}"
     plt.title(title)
-    prefix = "pred_" if pred else "gt_"
-    plot_tmp_dir = os.path.join(save_dir, "results", "tmp")
-    pathlib.Path(plot_tmp_dir).mkdir(parents=True, exist_ok=True)
-    plt.savefig(os.path.join(plot_tmp_dir, prefix + str(frame_idx) + ".png"), dpi=200)
+    prefix = prefix
+    pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
+    plt.savefig(os.path.join(save_dir, prefix + str(frame_idx) + ".png"), dpi=100)
     plt.close()
 
 def plot_pose_compare2(

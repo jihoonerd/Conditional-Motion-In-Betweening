@@ -60,6 +60,8 @@ def train(opt, device):
     horizon = target_idx - from_idx
     root_lerped, local_q_lerped = lerp_pose(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
 
+    # FK To get global pos, and global rotation
+
     pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], 96, device)[:,from_idx:target_idx,:]
     pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, 96, device)[:,from_idx:target_idx,:]
 
