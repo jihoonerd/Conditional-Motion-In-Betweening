@@ -1,12 +1,12 @@
 python3 train_tfmodel.py \
     --processed_data_dir='processed_data_walk/' \
 	--batch_size=16 \
-	--epochs=3000 \
+	--epochs=5000 \
 	--device=0 \
 	--entity=rilab-motion \
-	--exp_name="WALK: bert-based(lerp, attend all)" \
+	--exp_name="WALK: bert (10-aligned, lerp, attend all)" \
 	--save_interval=150 \
-	--generator_learning_rate=0.001 \
+	--generator_learning_rate=0.0001 \
 	--optim_beta1=0.5 \
 	--optim_beta2=0.9 \
 	--loss_root_weight=0.01 \
