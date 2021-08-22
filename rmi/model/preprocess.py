@@ -21,7 +21,7 @@ def lerp_pose(data, from_idx=9, target_idx=39):
 
     return root_p, local_q
 
-def vectorize_pose(root_p, local_q, vector_dim, device):
+def vectorize_pose(root_p, local_q, contact, vector_dim, device):
     """Reshape root_p and local_q to match with transformer src dimension
     
     Returns: root_p, local_q
@@ -31,10 +31,11 @@ def vectorize_pose(root_p, local_q, vector_dim, device):
     # Should have (Seq len, Batch size, Embedding dim)
     root_p = torch.Tensor(root_p).to(device)
     local_q = torch.Tensor(local_q.reshape(batch_size, seq_len, -1)).to(device)
+    contact = torch.Tensor(contact).to(device)
 
-    padding_dim = vector_dim - (root_p.shape[-1] + local_q.shape[-1])
+    padding_dim = vector_dim - (root_p.shape[-1] + local_q.shape[-1] + contact.shape[-1])
     dummy = torch.zeros([batch_size, seq_len, padding_dim], device=device)
-    out = torch.cat([root_p, local_q, dummy], dim=2)
+    out = torch.cat([root_p, local_q, contact, dummy], dim=2)
     return out
 
 

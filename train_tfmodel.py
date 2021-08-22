@@ -59,11 +59,13 @@ def train(opt, device):
     from_idx, target_idx = 9, 39
     horizon = target_idx - from_idx
     root_lerped, local_q_lerped = lerp_pose(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
+    contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
     # FK To get global pos, and global rotation
 
-    pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], 96, device)[:,from_idx:target_idx,:]
-    pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, 96, device)[:,from_idx:target_idx,:]
+    # TODO: Add contact
+    pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)[:,from_idx:target_idx,:]
+    pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, contact_init, 96, device)[:,from_idx:target_idx,:]
 
     tensor_dataset = TensorDataset(pose_vectorized_lerp, pose_vectorized_gt)
     lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
@@ -71,8 +73,10 @@ def train(opt, device):
     # Extract dimension from processed data
     root_v_dim = lafan_dataset.root_v_dim
     local_q_dim = lafan_dataset.local_q_dim
+    contact_dim = lafan_dataset.contact_dim
+    repr_dim = root_v_dim + local_q_dim + contact_dim
 
-    transformer_encoder = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=91, device=device)
+    transformer_encoder = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim, device=device)
     transformer_encoder.to(device)
 
     l1_loss = nn.L1Loss()
@@ -100,16 +104,20 @@ def train(opt, device):
                 output = transformer_encoder(pose_vectorized_lerp, src_mask)
 
                 root_pred = output[:,:,:root_v_dim].permute(1,0,2)
-                quat_pred = output[:,:,root_v_dim:].permute(1,0,2)
+                quat_pred = output[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
+                contact_pred = torch.sigmoid(output[:,:,root_v_dim + local_q_dim:root_v_dim+local_q_dim+contact_dim]).permute(1,0,2)
 
                 root_gt = pose_vectorized_gt[:,:,:root_v_dim].permute(1,0,2)
                 quat_gt = pose_vectorized_gt[:,:,root_v_dim: root_v_dim + local_q_dim].permute(1,0,2)
+                contact_gt = pose_vectorized_gt[:,:,root_v_dim + local_q_dim: root_v_dim + local_q_dim + contact_dim].permute(1,0,2)
 
                 root_loss = l1_loss(root_pred, root_gt)
                 quat_loss = l1_loss(quat_pred, quat_gt)
+                contact_loss = l1_loss(contact_pred, contact_gt)
 
                 total_g_loss = opt.loss_root_weight * root_loss + \
-                               opt.loss_quat_weight * quat_loss
+                               opt.loss_quat_weight * quat_loss + \
+                               opt.loss_contact_weight * contact_loss
 
             scaler.scale(total_g_loss).backward()
             scaler.unscale_(optim)
@@ -120,7 +128,8 @@ def train(opt, device):
         # Log
         log_dict = {
             "Train/LOSS/Root Loss": opt.loss_root_weight * root_loss, 
-            "Train/LOSS/Quaternion Loss": opt.loss_quat_weight * quat_loss, 
+            "Train/LOSS/Quaternion Loss": opt.loss_quat_weight * quat_loss,
+            "Train/LOSS/Contact Loss": opt.loss_contact_weight * contact_loss, 
             "Train/LOSS/Total Loss": total_g_loss
         }
 
@@ -159,6 +168,7 @@ def parse_opt():
     parser.add_argument('--optim_beta2', type=float, default=0.9, help='optim_beta2')
     parser.add_argument('--loss_root_weight', type=float, default=0.01, help='loss_pos_weight')
     parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
+    parser.add_argument('--loss_contact_weight', type=float, default=1.0, help='loss_contact_weight')
     parser.add_argument('--use_fk_loss', action='store_true')
     opt = parser.parse_args()
     return opt
