@@ -205,6 +205,24 @@ class InfoGANDiscriminator(nn.Module):
         return out
 
 
+class MotionDiscriminator(nn.Module):
+
+    def __init__(self, input_dim=95, kernel_size=3, out_dim=30):
+        super().__init__()
+
+        self.conv1d0 = nn.Conv1d(input_dim, input_dim//2, kernel_size=kernel_size)
+        self.conv1d1 = nn.Conv1d(input_dim//2, out_dim, kernel_size=kernel_size)
+        self.conv1d_1x1 = nn.Conv1d(out_dim, 1, kernel_size=1)
+
+    def forward(self, x):
+        x = self.conv1d0(x)
+        x = F.relu(x)
+        x = self.conv1d1(x)
+        x = F.relu(x)
+        x = self.conv1d_1x1(x)
+        return x
+        
+
 class DInfoGAN(nn.Module):
     def __init__(self, input_dim=30):
         super().__init__()
@@ -233,22 +251,26 @@ class QInfoGAN(nn.Module):
             nn.Linear(input_dim, self.discrete_code_dim)
         )
 
-        self.conv_to_infogan_continuous_mu = nn.Sequential(
-            nn.Linear(input_dim, input_dim),
-            nn.ReLU(),
-            nn.Linear(input_dim, self.continuous_code_dim)
-        )
+        if self.continuous_code_dim > 0:
+            self.conv_to_infogan_continuous_mu = nn.Sequential(
+                nn.Linear(input_dim, input_dim),
+                nn.ReLU(),
+                nn.Linear(input_dim, self.continuous_code_dim)
+            )
 
-        self.conv_to_infogan_continuous_var = nn.Sequential(
-            nn.Linear(input_dim, input_dim),
-            nn.ReLU(),
-            nn.Linear(input_dim, self.continuous_code_dim)
-        )
+            self.conv_to_infogan_continuous_var = nn.Sequential(
+                nn.Linear(input_dim, input_dim),
+                nn.ReLU(),
+                nn.Linear(input_dim, self.continuous_code_dim)
+            )
 
 
     def forward(self, x):
         q_discrete = self.conv_to_infogan_discrete(x)
 
-        mu = self.conv_to_infogan_continuous_mu(x)
-        var = torch.exp(self.conv_to_infogan_continuous_var(x))
+        if self.continuous_code_dim > 0:
+            mu = self.conv_to_infogan_continuous_mu(x)
+            var = torch.exp(self.conv_to_infogan_continuous_var(x))
+        else:
+            mu, var = None, None
         return q_discrete, mu, var
