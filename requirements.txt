@@ -60,10 +60,6 @@ termcolor==1.1.0
 thop==0.0.31.post2005241907
 threadpoolctl==2.1.0
 toml==0.10.2
-torch==1.8.1+cu111
-torch-tb-profiler==0.2.0
-torchaudio==0.8.1
-torchvision==0.9.1+cu111
 tqdm==4.59.0
 typing-extensions==3.7.4.3
 urllib3==1.26.6
