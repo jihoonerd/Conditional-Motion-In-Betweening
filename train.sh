@@ -1,10 +1,10 @@
 python train_tfmodel.py \
 	--processed_data_dir="processed_data_walk_dance/" \
-	--batch_size=8 \
+	--batch_size=4 \
 	--epochs=5000 \
-	--device=2 \
+	--device=3 \
 	--entity=rilab-motion \
-	--exp_name="WALK_DANCE: BERT ICR (8, GANONLY)" \
+	--exp_name="WALK_DANCE: BERT ICR (4, GANONLY)" \
 	--save_interval=50 \
 	--generator_learning_rate=0.001 \
 	--discriminator_learning_rate=0.00001 \
@@ -12,8 +12,8 @@ python train_tfmodel.py \
 	--optim_beta1=0.5 \
 	--optim_beta2=0.99 \
 	--loss_discriminator_weight=0.8 \
-	--loss_gan_weight=1.0 \
+	--loss_generator_weight=1.0 \
 	--loss_code_weight=1.0 \
-	--infogan_disc_code=2 \
+	--infogan_disc_code=5 \
 	--infogan_cont_code=0 \
 	--loss_crh_weight=0.2
