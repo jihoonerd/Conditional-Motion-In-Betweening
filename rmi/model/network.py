@@ -207,47 +207,40 @@ class InfoGANDiscriminator(nn.Module):
 
 class MotionDiscriminator(nn.Module):
 
-    def __init__(self, input_dim=95, kernel_size=3, out_dim=30):
+    def __init__(self, input_dim=95, hidden_dim=32, out_dim=128):
         super().__init__()
-
-        self.conv1d0 = nn.Conv1d(input_dim, input_dim//2, kernel_size=kernel_size)
-        self.conv1d1 = nn.Conv1d(input_dim//2, out_dim, kernel_size=kernel_size)
-        self.conv1d_1x1 = nn.Conv1d(out_dim, 1, kernel_size=1)
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.conv1d_1 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3)
+        self.flatten = nn.Flatten()
+        self.linear1 = nn.Linear(896, 128)
+        self.linear2 = nn.Linear(128, out_dim)
 
     def forward(self, x):
-        x = self.conv1d0(x)
-        x = F.relu(x)
-        x = self.conv1d1(x)
-        x = F.relu(x)
-        x = self.conv1d_1x1(x)
+        x = F.leaky_relu(self.conv1d_1(x))
+        x = self.flatten(x)
+        x = F.leaky_relu(self.linear1(x))
+        x = self.linear2(x)
         return x
         
 
 class DInfoGAN(nn.Module):
-    def __init__(self, input_dim=30):
+    def __init__(self, input_dim=128):
         super().__init__()
         self.input_dim = input_dim
-
-        self.conv_to_gan = nn.Sequential(
-            nn.Linear(input_dim, input_dim),
-            nn.ReLU(),
-            nn.Linear(input_dim, 1)
-        )
-
+        self.conv_to_gan = nn.Linear(input_dim, 1)
     def forward(self, x):
         out = self.conv_to_gan(x)
         return out
 
 class QInfoGAN(nn.Module):
-    def __init__(self, input_dim=30, discrete_code_dim=4, continuous_code_dim=2):
+    def __init__(self, input_dim=128, discrete_code_dim=4, continuous_code_dim=2):
         super().__init__()
         self.input_dim = input_dim
         self.discrete_code_dim = discrete_code_dim
         self.continuous_code_dim = continuous_code_dim
 
         self.conv_to_infogan_discrete = nn.Sequential(
-            nn.Linear(input_dim, input_dim),
-            nn.ReLU(),
             nn.Linear(input_dim, self.discrete_code_dim)
         )
 
@@ -274,3 +267,25 @@ class QInfoGAN(nn.Module):
         else:
             mu, var = None, None
         return q_discrete, mu, var
+
+class InfoGANCRH(nn.Module):
+
+    def __init__(self, input_dim=95, hidden_dim=64, out_dim=128):
+        super().__init__()
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.conv1d_1 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3)
+        self.conv1d_2 = nn.Conv1d(self.hidden_dim, self.hidden_dim, kernel_size=3)
+        self.flatten = nn.Flatten()
+        self.linear1 = nn.Linear(1664, 512)
+        self.linear2 = nn.Linear(512, 256)
+        self.linear3 = nn.Linear(256, out_dim)
+
+    def forward(self, x):
+        x = F.leaky_relu(self.conv1d_1(x))
+        x = F.leaky_relu(self.conv1d_2(x))
+        x = self.flatten(x)
+        x = F.leaky_relu(self.linear1(x))
+        x = F.leaky_relu(self.linear2(x))
+        x = self.linear3(x)
+        return x
