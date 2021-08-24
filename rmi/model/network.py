@@ -270,22 +270,18 @@ class QInfoGAN(nn.Module):
 
 class InfoGANCRH(nn.Module):
 
-    def __init__(self, input_dim=95, hidden_dim=64, out_dim=128):
+    def __init__(self, input_dim=95, hidden_dim=32, out_dim=128):
         super().__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.conv1d_1 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3)
-        self.conv1d_2 = nn.Conv1d(self.hidden_dim, self.hidden_dim, kernel_size=3)
         self.flatten = nn.Flatten()
-        self.linear1 = nn.Linear(1664, 512)
-        self.linear2 = nn.Linear(512, 256)
-        self.linear3 = nn.Linear(256, out_dim)
+        self.linear1 = nn.Linear(896, 128)
+        self.linear2 = nn.Linear(128, out_dim)
 
     def forward(self, x):
         x = F.leaky_relu(self.conv1d_1(x))
-        x = F.leaky_relu(self.conv1d_2(x))
         x = self.flatten(x)
         x = F.leaky_relu(self.linear1(x))
-        x = F.leaky_relu(self.linear2(x))
-        x = self.linear3(x)
+        x = self.linear2(x)
         return x
