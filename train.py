@@ -53,7 +53,7 @@ def train(opt, device):
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['dance'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     
     # LERP In-betweening Frames
     from_idx, target_idx = 9, 39
@@ -127,7 +127,7 @@ def train(opt, device):
             scaler.step(optim)
             scaler.update()
 
-            scheduler.step()
+        scheduler.step()
                                 
         # Log
         log_dict = {
