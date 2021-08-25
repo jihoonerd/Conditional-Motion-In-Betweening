@@ -1,10 +1,10 @@
 python train.py \
-	--processed_data_dir="processed_data_dance/" \
+	--processed_data_dir="processed_data_all/" \
 	--batch_size=16 \
 	--epochs=5000 \
 	--device=3 \
 	--entity=rilab-motion \
-	--exp_name="D: BERT (BASE, 16)" \
+	--exp_name="ALL: BERT (BASE, 16)" \
 	--save_interval=150 \
 	--generator_learning_rate=0.0001 \
 	--discriminator_learning_rate=0.0001 \
