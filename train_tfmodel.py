@@ -52,7 +52,7 @@ def train(opt, device):
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['walk', 'dance'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['walk', 'dance', 'jump'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     
     # LERP In-betweening Frames
     from_idx, target_idx = 9, 39
@@ -92,6 +92,7 @@ def train(opt, device):
     infogan_crh.to(device)
 
     categorical_loss = nn.CrossEntropyLoss()
+    l1_loss = nn.L1Loss()
 
     generator_optim = Adam(params=list(transformer_encoder.parameters()) +
                                   list(q_infogan.parameters()),
@@ -121,9 +122,9 @@ def train(opt, device):
             pose_vectorized_lerp = pose_vectorized_lerp.permute(1,0,2)
 
             # InfoGAN code (per motion)
-            infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=opt.infogan_disc_code, continuous_code_dim=opt.infogan_cont_code, device=device)
-            infogan_code_gen1, _ = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=opt.infogan_disc_code, continuous_code_dim=opt.infogan_cont_code, device=device)
-            infogan_code_gen2, _ = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=opt.infogan_disc_code, continuous_code_dim=opt.infogan_cont_code, device=device)
+            # infogan_code_gen, fake_indices = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=opt.infogan_disc_code, continuous_code_dim=opt.infogan_cont_code, device=device)
+            # infogan_code_gen1, _ = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=opt.infogan_disc_code, continuous_code_dim=opt.infogan_cont_code, device=device)
+            # infogan_code_gen2, _ = generate_infogan_code(batch_size=current_batch_size, discrete_code_dim=opt.infogan_disc_code, continuous_code_dim=opt.infogan_cont_code, device=device)
             
             seq_len = pose_vectorized_lerp.shape[0]
             src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
@@ -133,7 +134,7 @@ def train(opt, device):
             with amp.autocast(enabled=cuda):
 
                 # x in Figure 3 (InfoGAN-CR)
-                pose_vectorized_lerp[:,:,repr_dim: repr_dim + opt.infogan_disc_code + opt.infogan_cont_code] = infogan_code_gen.unsqueeze(0).repeat(seq_len,1,1)
+                # pose_vectorized_lerp[:,:,repr_dim: repr_dim + opt.infogan_disc_code + opt.infogan_cont_code] = infogan_code_gen.unsqueeze(0).repeat(seq_len,1,1)
                 output = transformer_encoder(pose_vectorized_lerp, src_mask)
 
                 root_pred = output[:,:,:root_v_dim].permute(1,0,2)
@@ -145,37 +146,45 @@ def train(opt, device):
                 contact_gt = pose_vectorized_gt[:,:,root_v_dim + local_q_dim: root_v_dim + local_q_dim + contact_dim].permute(1,0,2)
 
                 ## Discriminator Part
-                fake_input = torch.cat([root_pred, quat_pred, contact_pred], dim=2).permute(0,2,1)
-                real_input = torch.cat([root_gt, quat_gt, contact_gt], dim=2).permute(0,2,1)
+                # fake_input = torch.cat([root_pred, quat_pred, contact_pred], dim=2).permute(0,2,1)
+                # real_input = torch.cat([root_gt, quat_gt, contact_gt], dim=2).permute(0,2,1)
 
-                infogan_disc_fake_gan_out = infogan_discriminator(fake_input.detach())
-                infogan_disc_fake_d_out = d_infogan(infogan_disc_fake_gan_out)
-                info_disc_fake_loss = torch.mean((infogan_disc_fake_d_out) ** 2)
+                # infogan_disc_fake_gan_out = infogan_discriminator(fake_input.detach())
+                # infogan_disc_fake_d_out = d_infogan(infogan_disc_fake_gan_out)
+                # info_disc_fake_loss = torch.mean((infogan_disc_fake_d_out) ** 2)
 
-                infogan_disc_real_gan_out = infogan_discriminator(real_input)
-                infogan_disc_real_d_out = d_infogan(infogan_disc_real_gan_out)
-                info_disc_real_loss = torch.mean((infogan_disc_real_d_out -  1) ** 2)
+                # infogan_disc_real_gan_out = infogan_discriminator(real_input)
+                # infogan_disc_real_d_out = d_infogan(infogan_disc_real_gan_out)
+                # info_disc_real_loss = torch.mean((infogan_disc_real_d_out -  1) ** 2)
+                # total_d_loss = opt.loss_discriminator_weight * (info_disc_fake_loss+info_disc_real_loss)
 
-            # Optimize
-            discriminator_optim.zero_grad()
-            scaler.scale(opt.loss_discriminator_weight * info_disc_fake_loss).backward()
-            scaler.scale(opt.loss_discriminator_weight * info_disc_real_loss).backward()
-            total_d_loss = opt.loss_discriminator_weight * (info_disc_fake_loss+info_disc_real_loss)
-            scaler.unscale_(discriminator_optim)
-            torch.nn.utils.clip_grad_norm_(infogan_discriminator.parameters(), 0.03)
-            torch.nn.utils.clip_grad_norm_(d_infogan.parameters(), 0.03)
-            scaler.step(discriminator_optim)
+                ## Generator Training
+                # info_gen_fake_gan_out = infogan_discriminator(fake_input)
+                # info_gen_fake_d_out = d_infogan(info_gen_fake_gan_out)
+                # info_gen_fake_loss = torch.mean((info_gen_fake_d_out - 1) ** 2)
 
-            ## Generator Training
-            with amp.autocast(enabled=cuda):
-                info_gen_fake_gan_out = infogan_discriminator(fake_input)
-                info_gen_fake_d_out = d_infogan(info_gen_fake_gan_out)
-                info_gen_fake_loss = torch.mean((info_gen_fake_d_out - 1) ** 2)
+                # info_gen_fake_q_out, _, _ = q_infogan(info_gen_fake_gan_out)
+                # info_gen_code_loss_d = categorical_loss(info_gen_fake_q_out, fake_indices)
 
-                info_gen_fake_q_out, _, _ = q_infogan(info_gen_fake_gan_out)
-                info_gen_code_loss_d = categorical_loss(info_gen_fake_q_out, fake_indices)
+                root_loss = l1_loss(root_pred, root_gt)
+                quat_loss = l1_loss(quat_pred, quat_gt)
+                contact_loss = l1_loss(contact_pred, contact_gt)
+                
 
-                total_g_loss = opt.loss_generator_weight * info_gen_fake_loss + opt.loss_code_weight * info_gen_code_loss_d
+                total_g_loss = opt.loss_root_weight * root_loss + \
+                               opt.loss_quat_weight * quat_loss + \
+                               opt.loss_contact_weight * contact_loss
+                            #    opt.loss_generator_weight * info_gen_fake_loss + \
+                            #    opt.loss_code_weight * info_gen_code_loss_d
+
+
+            # discriminator_optim.zero_grad()
+            # scaler.scale(opt.loss_discriminator_weight * info_disc_fake_loss).backward()
+            # scaler.scale(opt.loss_discriminator_weight * info_disc_real_loss).backward()
+            # scaler.unscale_(discriminator_optim)
+            # torch.nn.utils.clip_grad_norm_(infogan_discriminator.parameters(), 0.03)
+            # torch.nn.utils.clip_grad_norm_(d_infogan.parameters(), 0.03)
+            # scaler.step(discriminator_optim)
 
             generator_optim.zero_grad()
             scaler.scale(total_g_loss).backward()
@@ -185,53 +194,58 @@ def train(opt, device):
             scaler.step(generator_optim)
             scaler.update()
 
-            with amp.autocast(enabled=cuda):
+            # with amp.autocast(enabled=cuda):
 
-                # Infogan CR
-                fixed_code = random.randint(0,opt.infogan_disc_code - 1)
+            #     # Infogan CR
+            #     fixed_code = random.randint(0,opt.infogan_disc_code - 1)
 
-                # x' in Figure 3 (InfoGAN-CR)
-                pose_vectorized_lerp1 = pose_vectorized_lerp.clone()
-                pose_vectorized_lerp1[:,:,repr_dim: repr_dim + opt.infogan_disc_code + opt.infogan_cont_code] = infogan_code_gen1.unsqueeze(0).repeat(seq_len,1,1)
-                pose_vectorized_lerp1[:,:,repr_dim + fixed_code] = 1
-                output_1 = transformer_encoder(pose_vectorized_lerp1, src_mask)
+            #     # x' in Figure 3 (InfoGAN-CR)
+            #     pose_vectorized_lerp1 = pose_vectorized_lerp.clone()
+            #     pose_vectorized_lerp1[:,:,repr_dim: repr_dim + opt.infogan_disc_code + opt.infogan_cont_code] = infogan_code_gen1.unsqueeze(0).repeat(seq_len,1,1)
+            #     pose_vectorized_lerp1[:,:,repr_dim + fixed_code] = 1
+            #     output_1 = transformer_encoder(pose_vectorized_lerp1, src_mask)
 
-                root_pred1 = output_1[:,:,:root_v_dim].permute(1,0,2)
-                quat_pred1 = output_1[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
-                contact_pred1 = torch.sigmoid(output_1[:,:,root_v_dim + local_q_dim:root_v_dim+local_q_dim+contact_dim]).permute(1,0,2)
-                fake_input1 = torch.cat([root_pred1, quat_pred1, contact_pred1], dim=2).permute(0,2,1)
+            #     root_pred1 = output_1[:,:,:root_v_dim].permute(1,0,2)
+            #     quat_pred1 = output_1[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
+            #     contact_pred1 = torch.sigmoid(output_1[:,:,root_v_dim + local_q_dim:root_v_dim+local_q_dim+contact_dim]).permute(1,0,2)
+            #     fake_input1 = torch.cat([root_pred1, quat_pred1, contact_pred1], dim=2).permute(0,2,1)
 
-                # x'' in Figure 3 (InfoGAN-CR)
-                pose_vectorized_lerp2 = pose_vectorized_lerp.clone()
-                pose_vectorized_lerp2[:,:,repr_dim: repr_dim + opt.infogan_disc_code + opt.infogan_cont_code] = infogan_code_gen2.unsqueeze(0).repeat(seq_len,1,1)
-                pose_vectorized_lerp2[:,:,repr_dim + fixed_code] = 1
-                output_2 = transformer_encoder(pose_vectorized_lerp2, src_mask)
+            #     # x'' in Figure 3 (InfoGAN-CR)
+            #     pose_vectorized_lerp2 = pose_vectorized_lerp.clone()
+            #     pose_vectorized_lerp2[:,:,repr_dim: repr_dim + opt.infogan_disc_code + opt.infogan_cont_code] = infogan_code_gen2.unsqueeze(0).repeat(seq_len,1,1)
+            #     pose_vectorized_lerp2[:,:,repr_dim + fixed_code] = 1
+            #     output_2 = transformer_encoder(pose_vectorized_lerp2, src_mask)
                 
-                root_pred2 = output_2[:,:,:root_v_dim].permute(1,0,2)
-                quat_pred2 = output_2[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
-                contact_pred2 = torch.sigmoid(output_2[:,:  ,root_v_dim + local_q_dim:root_v_dim+local_q_dim+contact_dim]).permute(1,0,2)
-                fake_input2 = torch.cat([root_pred2, quat_pred2, contact_pred2], dim=2).permute(0,2,1)
+            #     root_pred2 = output_2[:,:,:root_v_dim].permute(1,0,2)
+            #     quat_pred2 = output_2[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
+            #     contact_pred2 = torch.sigmoid(output_2[:,:  ,root_v_dim + local_q_dim:root_v_dim+local_q_dim+contact_dim]).permute(1,0,2)
+            #     fake_input2 = torch.cat([root_pred2, quat_pred2, contact_pred2], dim=2).permute(0,2,1)
 
-                fixed_out = torch.ones(current_batch_size, dtype=torch.long, device=device) * fixed_code
+            #     fixed_out = torch.ones(current_batch_size, dtype=torch.long, device=device) * fixed_code
 
-                crh_input = torch.cat([fake_input1, fake_input2], dim=1)
-                crh_out = infogan_crh(crh_input)
-                crh_out_loss = categorical_loss(crh_out, fixed_out)
+            #     crh_input = torch.cat([fake_input1, fake_input2], dim=1)
+            #     crh_out = infogan_crh(crh_input)
+            #     crh_out_loss = categorical_loss(crh_out, fixed_out)
 
-            cr_optim.zero_grad()
-            scaler.scale(opt.loss_crh_weight * crh_out_loss).backward()
-            scaler.unscale_(cr_optim)
-            torch.nn.utils.clip_grad_norm_(transformer_encoder.parameters(), 1.0)
-            torch.nn.utils.clip_grad_norm_(infogan_crh.parameters(), 1.0)
-            scaler.step(cr_optim)
-            scaler.update()
+
+            # if False:
+            #     cr_optim.zero_grad()
+            #     scaler.scale(opt.loss_crh_weight * crh_out_loss).backward()
+            #     scaler.unscale_(cr_optim)
+            #     torch.nn.utils.clip_grad_norm_(transformer_encoder.parameters(), 1.0)
+            #     torch.nn.utils.clip_grad_norm_(infogan_crh.parameters(), 1.0)
+            #     scaler.step(cr_optim)
+            #     scaler.update()
                                 
         # Log
         log_dict = {
-            "Train/Loss/Generator GAN Loss": opt.loss_generator_weight * info_gen_fake_loss,
-            "Train/Loss/Generator Code Loss": opt.loss_code_weight * info_gen_code_loss_d,
-            "Train/Loss/Contrastive Regularization Loss": opt.loss_crh_weight * crh_out_loss,
-            "Train/Loss/Total Discriminator Loss": total_d_loss,
+            "Train/Loss/Root Loss": opt.loss_root_weight * root_loss, 
+            "Train/Loss/Quaternion Loss": opt.loss_quat_weight * quat_loss,
+            "Train/Loss/Contact Loss": opt.loss_contact_weight * contact_loss,
+            # "Train/Loss/Generator GAN Loss": opt.loss_generator_weight * info_gen_fake_loss,
+            # "Train/Loss/Generator Code Loss": opt.loss_code_weight * info_gen_code_loss_d,
+            # "Train/Loss/Contrastive Regularization Loss": opt.loss_crh_weight * crh_out_loss,
+            # "Train/Loss/Total Discriminator Loss": total_d_loss,
             "Train/Loss/Total Generator Loss": total_g_loss
         }
 
@@ -265,14 +279,17 @@ def parse_opt():
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=50, help='Log model after every "save_period" epoch')
     parser.add_argument('--generator_learning_rate', type=float, default=0.001, help='generator_learning_rate')
-    parser.add_argument('--discriminator_learning_rate', type=float, default=0.00001, help='discriminator_learning_rate')
+    parser.add_argument('--discriminator_learning_rate', type=float, default=0.0001, help='discriminator_learning_rate')
     parser.add_argument('--cr_learning_rate', type=float, default=0.001, help='crh_infogan learning rate')
     parser.add_argument('--optim_beta1', type=float, default=0.5, help='optim_beta1')
     parser.add_argument('--optim_beta2', type=float, default=0.9, help='optim_beta2')
+    parser.add_argument('--loss_root_weight', type=float, default=0.01, help='loss_pos_weight')
+    parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
+    parser.add_argument('--loss_contact_weight', type=float, default=0.2, help='loss_contact_weight')
     parser.add_argument('--loss_discriminator_weight', type=float, default=1.0, help='loss_gan_discriminator_weight')
     parser.add_argument('--loss_generator_weight', type=float, default=1.0, help='loss_gan_weight')
     parser.add_argument('--loss_code_weight', type=float, default=1.0, help='loss_code_weight')
-    parser.add_argument('--infogan_disc_code', type=int, default=5, help='number of discrete codes for InfoGAN')
+    parser.add_argument('--infogan_disc_code', type=int, default=3, help='number of discrete codes for InfoGAN')
     parser.add_argument('--infogan_cont_code', type=int, default=0, help='number of continuous codes for InfoGAN')
     parser.add_argument('--loss_crh_weight', type=float, default=0.2, help='weight of H in InfoGAN-CR')
     opt = parser.parse_args()
