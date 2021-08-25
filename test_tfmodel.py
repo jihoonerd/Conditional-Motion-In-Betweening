@@ -37,8 +37,8 @@ def test(opt, device):
     root_lerped, local_q_lerped = lerp_pose(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
     contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
-    pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 100, device)[:,from_idx:target_idx,:]
-    pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, contact_init, 100, device)[:,from_idx:target_idx,:]
+    pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)[:,from_idx:target_idx,:]
+    pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, contact_init, 96, device)[:,from_idx:target_idx,:]
 
     # Extract dimension from processed data
     root_v_dim = lafan_dataset.root_v_dim
@@ -52,12 +52,12 @@ def test(opt, device):
     src_mask = torch.zeros((horizon, horizon), device=device).type(torch.bool)
     src_mask = src_mask.to(device)
 
-    infogan_code_gen = torch.zeros(pose_vectorized_lerp.shape[1], 2)
-    pose_vectorized_lerp[:,:,repr_dim: repr_dim + 2] = infogan_code_gen
+    # infogan_code_gen = torch.zeros(pose_vectorized_lerp.shape[1], 2)
+    # pose_vectorized_lerp[:,:,repr_dim: repr_dim + 2] = infogan_code_gen
 
-    test_idx = [4,5,6]
+    test_idx = [2,6,7,8,9]
 
-    model = TransformerModel(seq_len=horizon, d_model=100, nhead=10, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim, device=device)
+    model = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim, device=device)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
@@ -112,7 +112,7 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--ckpt_path', type=str, default='train-200.pt', help='weights path')
+    parser.add_argument('--ckpt_path', type=str, default='train-750.pt', help='weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_walk_dance/', help='path to save pickled processed data')
