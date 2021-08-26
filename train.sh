@@ -4,7 +4,7 @@ python train.py \
 	--epochs=5000 \
 	--device=1 \
 	--entity=rilab-motion \
-	--exp_name="A: BERT WO LERP (16, horizon-fix)" \
+	--exp_name="A: BERT WO LERP (16, pebd, horizon-fix)" \
 	--save_interval=200 \
 	--generator_learning_rate=0.0001 \
 	--discriminator_learning_rate=0.00001 \
