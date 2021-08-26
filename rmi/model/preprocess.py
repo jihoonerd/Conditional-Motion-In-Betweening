@@ -1,6 +1,19 @@
 import torch
 import numpy as np
 
+
+def replace_noise(data, from_idx=9, target_idx=39):
+    root_p = data['root_p'].copy()
+    local_q = data['local_q'].copy()
+
+    noise_root_p = np.random.normal(size=root_p[:,from_idx:target_idx,:].shape)
+    root_p[:,from_idx:target_idx,:] = noise_root_p
+
+    noise_local_q = np.random.normal(size=local_q[:,from_idx:target_idx,:].shape)
+    local_q[:,from_idx:target_idx,:] = noise_local_q
+
+    return root_p, local_q
+
 def lerp_pose(data, from_idx=9, target_idx=39):
     """
     Make linear interpolation in [from_idx, target_idx].
