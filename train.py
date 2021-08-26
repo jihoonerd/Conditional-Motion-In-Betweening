@@ -54,21 +54,21 @@ def train(opt, device):
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['walk'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     
     # LERP In-betweening Frames
-    from_idx, target_idx = 9, 39
-    horizon = target_idx - from_idx
+    from_idx, target_idx = 9, 40 # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
+    horizon = target_idx - from_idx + 1
     root_lerped, local_q_lerped = replace_noise(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
     contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
     # FK To get global pos, and global rotation
 
     # TODO: Add contact
-    pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)[:,from_idx:target_idx,:]
-    pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, contact_init, 96, device)[:,from_idx:target_idx,:]
+    pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)[:,from_idx:target_idx+1,:]
+    pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, contact_init, 96, device)[:,from_idx:target_idx+1,:]
     global_pos = torch.Tensor(lafan_dataset.data['global_pos']).to(device)
-    global_pos_gt = global_pos[:,from_idx:target_idx,:]
+    global_pos_gt = global_pos[:,from_idx:target_idx+1,:]
 
     tensor_dataset = TensorDataset(pose_vectorized_lerp, pose_vectorized_gt, global_pos_gt)
     lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
