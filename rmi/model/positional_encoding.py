@@ -3,6 +3,16 @@ from torch import nn, Tensor
 import math
 
 
+class PositionalEmbedding(nn.Module):
+    def __init__(self, d_model: int=96):
+        super().__init__()
+        self.pos_emb = nn.Embedding(d_model, d_model)
+
+    def forward(self, inputs):
+        positions = torch.arange(inputs.size(0), device=inputs.device).expand(inputs.size(1), inputs.size(0)).contiguous()+1
+        outputs = inputs + self.pos_emb(positions).permute(1,0,2)
+        return outputs
+
 class PositionalEncoding(nn.Module):
 
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):

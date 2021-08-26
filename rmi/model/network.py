@@ -4,7 +4,7 @@ from torch.nn.modules.activation import ReLU
 from rmi.model.plu import PLU
 import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-from rmi.model.positional_encoding import PositionalEncoding
+from rmi.model.positional_encoding import PositionalEmbedding
 import math
 
 
@@ -16,7 +16,7 @@ class TransformerModel(nn.Module):
         super().__init__()
         self.model_type = 'Transformer'
         self.seq_len = seq_len
-        self.pos_encoder = PositionalEncoding(d_model, dropout, max_len=seq_len)
+        self.pos_embedding= PositionalEmbedding(d_model=d_model)
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.d_model = d_model
@@ -38,7 +38,7 @@ class TransformerModel(nn.Module):
         Returns:
             output Tensor of shape [seq_len, batch_size, embedding_dim]
         """
-        src = self.pos_encoder(src)
+        src = self.pos_embedding(src)
         output = self.transformer_encoder(src, src_mask)
         output = self.decoder(output)
         return output
