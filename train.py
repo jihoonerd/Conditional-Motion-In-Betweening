@@ -13,12 +13,13 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
+from rmi.model.skeleton import Skeleton, sk_joints_to_remove, sk_offsets, sk_parents
 
 import wandb
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import lerp_pose, vectorize_pose
+from rmi.model.preprocess import lerp_pose, vectorize_pose, replace_noise
 from utils.general import increment_path
 
 LOGGER = logging.getLogger(__name__)
@@ -45,8 +46,8 @@ def train(opt, device):
     wandb.init(config=opt, project="RMIB-InfoGAN", entity=opt.entity, name=opt.exp_name, dir=opt.save_dir)
 
     # Load Skeleton
-    parsed = BVHParser().parse(opt.skeleton_path) # Use first bvh info as a reference skeleton.
-    skeleton = TorchSkeleton(skeleton=parsed.skeleton, root_name='Hips', device=device)
+    skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
+    skeleton_mocap.remove_joints(sk_joints_to_remove)
 
     # Flip, Load and preprocess data. It utilizes LAFAN1 utilities
     flip_bvh(opt.data_path)
@@ -58,7 +59,7 @@ def train(opt, device):
     # LERP In-betweening Frames
     from_idx, target_idx = 9, 39
     horizon = target_idx - from_idx
-    root_lerped, local_q_lerped = lerp_pose(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
+    root_lerped, local_q_lerped = replace_noise(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
     contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
     # FK To get global pos, and global rotation
@@ -66,8 +67,10 @@ def train(opt, device):
     # TODO: Add contact
     pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)[:,from_idx:target_idx,:]
     pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, contact_init, 96, device)[:,from_idx:target_idx,:]
+    global_pos = torch.Tensor(lafan_dataset.data['global_pos']).to(device)
+    global_pos_gt = global_pos[:,from_idx:target_idx,:]
 
-    tensor_dataset = TensorDataset(pose_vectorized_lerp, pose_vectorized_gt)
+    tensor_dataset = TensorDataset(pose_vectorized_lerp, pose_vectorized_gt, global_pos_gt)
     lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
 
     # Extract dimension from processed data
@@ -90,7 +93,7 @@ def train(opt, device):
 
         pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
 
-        for pose_vectorized_lerp, pose_vectorized_gt in pbar:
+        for pose_vectorized_lerp, pose_vectorized_gt, global_pos_gt in pbar:
 
             pose_vectorized_gt = pose_vectorized_gt.permute(1,0,2)
             pose_vectorized_lerp = pose_vectorized_lerp.permute(1,0,2)
@@ -106,6 +109,9 @@ def train(opt, device):
 
                 root_pred = output[:,:,:root_v_dim].permute(1,0,2)
                 quat_pred = output[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
+                quat_pred_ = quat_pred.view(quat_pred.shape[0], quat_pred.shape[1], lafan_dataset.num_joints, 4)
+                quat_pred_ = quat_pred_ / torch.norm(quat_pred_, dim = -1, keepdim = True)
+                pos_pred = skeleton_mocap.forward_kinematics(quat_pred_, root_pred)
                 contact_pred = torch.sigmoid(output[:,:,root_v_dim + local_q_dim:root_v_dim+local_q_dim+contact_dim]).permute(1,0,2)
 
                 root_gt = pose_vectorized_gt[:,:,:root_v_dim].permute(1,0,2)
@@ -115,10 +121,12 @@ def train(opt, device):
                 root_loss = l1_loss(root_pred, root_gt)
                 quat_loss = l1_loss(quat_pred, quat_gt)
                 contact_loss = l1_loss(contact_pred, contact_gt)
+                global_pos_loss = l1_loss(pos_pred, global_pos_gt)
 
                 total_g_loss = opt.loss_root_weight * root_loss + \
                                opt.loss_quat_weight * quat_loss + \
-                               opt.loss_contact_weight * contact_loss
+                               opt.loss_contact_weight * contact_loss + \
+                               opt.loss_global_pos_weight * global_pos_loss
 
             optim.zero_grad()
             scaler.scale(total_g_loss).backward()
@@ -133,7 +141,8 @@ def train(opt, device):
         log_dict = {
             "Train/Loss/Root Loss": opt.loss_root_weight * root_loss, 
             "Train/Loss/Quaternion Loss": opt.loss_quat_weight * quat_loss,
-            "Train/Loss/Contact Loss": opt.loss_contact_weight * contact_loss, 
+            "Train/Loss/Contact Loss": opt.loss_contact_weight * contact_loss,
+            "Train/Loss/Global Position Loss": opt.loss_global_pos_weight * global_pos_loss,
             "Train/Loss/Total Loss": total_g_loss
         }
 
@@ -163,7 +172,7 @@ def parse_opt():
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_walk_dance/', help='path to save pickled processed data')
     parser.add_argument('--batch_size', type=int, default=8 , help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--device', default='3', help='cuda device, i.e. 0 or -1 or cpu')
+    parser.add_argument('--device', default='1', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=50, help='Log model after every "save_period" epoch')
@@ -175,6 +184,7 @@ def parse_opt():
     parser.add_argument('--loss_root_weight', type=float, default=0.01, help='loss_pos_weight')
     parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
     parser.add_argument('--loss_contact_weight', type=float, default=0.2, help='loss_contact_weight')
+    parser.add_argument('--loss_global_pos_weight', type=float, default=0.01, help='loss_global_pos_weight')
     parser.add_argument('--loss_discriminator_weight', type=float, default=1.0, help='loss_gan_discriminator_weight')
     parser.add_argument('--loss_generator_weight', type=float, default=1.0, help='loss_gan_weight')
     parser.add_argument('--loss_code_weight', type=float, default=1.0, help='loss_code_weight')
