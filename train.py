@@ -111,7 +111,7 @@ def train(opt, device):
                 quat_pred = output[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
                 quat_pred_ = quat_pred.view(quat_pred.shape[0], quat_pred.shape[1], lafan_dataset.num_joints, 4)
                 quat_pred_ = quat_pred_ / torch.norm(quat_pred_, dim = -1, keepdim = True)
-                pos_pred = skeleton_mocap.forward_kinematics(quat_pred_, root_pred)
+                global_pos_pred = skeleton_mocap.forward_kinematics(quat_pred_, root_pred)
                 contact_pred = torch.sigmoid(output[:,:,root_v_dim + local_q_dim:root_v_dim+local_q_dim+contact_dim]).permute(1,0,2)
 
                 root_gt = pose_vectorized_gt[:,:,:root_v_dim].permute(1,0,2)
@@ -121,7 +121,7 @@ def train(opt, device):
                 root_loss = l1_loss(root_pred, root_gt)
                 quat_loss = l1_loss(quat_pred, quat_gt)
                 contact_loss = l1_loss(contact_pred, contact_gt)
-                global_pos_loss = l1_loss(pos_pred, global_pos_gt)
+                global_pos_loss = l1_loss(global_pos_pred, global_pos_gt)
 
                 total_g_loss = opt.loss_root_weight * root_loss + \
                                opt.loss_quat_weight * quat_loss + \
