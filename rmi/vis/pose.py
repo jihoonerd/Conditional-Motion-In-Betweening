@@ -53,13 +53,7 @@ def plot_pose(
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
 
-    parent_idx = []
-    for joint_name in skeleton.skeleton.keys():
-        parent = skeleton.skeleton[joint_name]["parent"]
-        if parent is not None:  # If joint_name is root
-            parent_idx.append(skeleton.joints.index(parent))
-        else:
-            parent_idx.append(-1)
+    parent_idx = skeleton.parents()
 
     for i, p in enumerate(parent_idx):
         if i > 0:
@@ -118,7 +112,7 @@ def plot_pose(
     plt.title(title)
     prefix = prefix
     pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
-    plt.savefig(os.path.join(save_dir, prefix + str(frame_idx) + ".png"), dpi=100)
+    plt.savefig(os.path.join(save_dir, prefix + str(frame_idx) + ".png"), dpi=80)
     plt.close()
 
 def plot_pose_compare2(
