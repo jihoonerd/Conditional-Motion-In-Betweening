@@ -6,7 +6,6 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import yaml
-from kpt.model.skeleton import TorchSkeleton
 from pymo.parsers import BVHParser
 from torch.cuda import amp
 from torch.optim import Adam

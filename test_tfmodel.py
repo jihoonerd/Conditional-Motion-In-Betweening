@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 import numpy as np
 import torch
-from kpt.model.skeleton import TorchSkeleton
+from rmi.model.skeleton import Skeleton, sk_joints_to_remove, sk_offsets, sk_parents
 from PIL import Image
 from pymo.parsers import BVHParser
 import imageio
@@ -21,9 +21,9 @@ def test(opt, device):
     ckpt = torch.load(ckpt_path, map_location=device)
 
     # Load Skeleton
-    parsed = BVHParser().parse(opt.skeleton_path) # Use first bvh info as a reference skeleton.
-    skeleton = TorchSkeleton(skeleton=parsed.skeleton, root_name='Hips', device=device)
-
+    skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
+    skeleton_mocap.remove_joints(sk_joints_to_remove)
+    
     # Flip, Load and preprocess data. It utilizes LAFAN1 utilities
     flip_bvh(opt.data_path)
 
@@ -55,7 +55,7 @@ def test(opt, device):
     # fixed_code = 3
     # pose_vectorized_lerp[:,:,repr_dim + fixed_code] = 1
 
-    test_idx = [2,6,7,8,9]
+    test_idx = [2,6,7,8,9,10,12,15,17]
 
     model = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim, device=device)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
@@ -66,19 +66,18 @@ def test(opt, device):
     root_pred = output[:,test_idx,:root_v_dim].permute(1,0,2)
     quat_pred = output[:,test_idx,root_v_dim:root_v_dim+local_q_dim].permute(1,0,2)
 
-    global_pos_preds = []
-    global_pos_lerps = []
-    
-    for t in range(horizon):
-        root_fk = root_pred[:,t,:]
-        quat_fk = quat_pred.reshape(len(test_idx), horizon, lafan_dataset.num_joints, 4)[:,t,:,:]
-        pos_pred, _ = skeleton.forward_kinematics(root_fk, quat_fk, rot_repr='quaternion')
-        global_pos_preds.append(pos_pred)
+    root_fk = root_pred
+    quat_fk = quat_pred.reshape(len(test_idx), horizon, lafan_dataset.num_joints, 4)
+    quat_fk = quat_fk / torch.norm(quat_fk, dim = -1, keepdim = True)
+    pos_pred = skeleton_mocap.forward_kinematics(quat_fk, root_fk)
 
-    for t in range(from_idx, target_idx):
-        pos_lerped, _ = skeleton.forward_kinematics(torch.Tensor(root_lerped[test_idx,t,:]), 
-                                                torch.Tensor(local_q_lerped[test_idx, t]), rot_repr='quaternion')
-        global_pos_lerps.append(pos_lerped)
+
+    quat_lerped = torch.Tensor(local_q_lerped[test_idx, from_idx:target_idx+1])
+    quat_lerped = quat_lerped / torch.norm(quat_lerped, dim = -1, keepdim = True)
+    pos_lerped = skeleton_mocap.forward_kinematics( 
+                                            quat_lerped,
+                                            torch.Tensor(root_lerped[test_idx,from_idx:target_idx+1,:]) 
+                                            )
 
     # Compare Lerp, Prediction, GT
     for i in range(len(test_idx)):
@@ -93,11 +92,11 @@ def test(opt, device):
             
             # TODO: final frame does not match
             lerp_img_path = os.path.join(save_path, 'input')
-            plot_pose(start_pose, global_pos_lerps[t][i].detach().numpy(), target_pose, t, skeleton, save_dir=lerp_img_path, prefix='input')
+            plot_pose(start_pose, pos_lerped[i,t].detach().numpy(), target_pose, t, skeleton_mocap, save_dir=lerp_img_path, prefix='input')
             pred_img_path = os.path.join(save_path, 'pred_img')
-            plot_pose(start_pose, global_pos_preds[t][i].detach().numpy(), target_pose, t, skeleton, save_dir=pred_img_path, prefix='pred')
+            plot_pose(start_pose, pos_pred[i,t].detach().numpy(), target_pose, t, skeleton_mocap, save_dir=pred_img_path, prefix='pred')
             gt_img_path = os.path.join(save_path, 'gt_img')
-            plot_pose(start_pose, lafan_dataset.data['global_pos'][test_idx[i], t+from_idx], target_pose, t, skeleton, save_dir=gt_img_path, prefix='gt')
+            plot_pose(start_pose, lafan_dataset.data['global_pos'][test_idx[i], t+from_idx], target_pose, t, skeleton_mocap, save_dir=gt_img_path, prefix='gt')
 
             lerp_img = Image.open(os.path.join(lerp_img_path, 'input'+str(t)+'.png'), 'r')
             pred_img = Image.open(os.path.join(pred_img_path, 'pred'+str(t)+'.png'), 'r')
@@ -113,7 +112,7 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--ckpt_path', type=str, default='train-200.pt', help='weights path')
+    parser.add_argument('--ckpt_path', type=str, default='train-600.pt', help='weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_walk/', help='path to save pickled processed data')

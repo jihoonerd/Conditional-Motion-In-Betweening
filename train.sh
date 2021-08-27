@@ -1,11 +1,11 @@
 python train.py \
-	--processed_data_dir="processed_data_all/" \
+	--processed_data_dir="processed_data_walk/" \
 	--batch_size=16 \
 	--epochs=5000 \
 	--device=1 \
 	--entity=rilab-motion \
-	--exp_name="A: BERT WO LERP (16, pebd, horizon-fix)" \
-	--save_interval=200 \
+	--exp_name="W: BERT WO LERP (16, pebd, horizon-fix)" \
+	--save_interval=100 \
 	--generator_learning_rate=0.0001 \
 	--discriminator_learning_rate=0.00001 \
 	--cr_learning_rate=0.0001 \
