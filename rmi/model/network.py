@@ -7,6 +7,87 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from rmi.model.positional_encoding import PositionalEmbedding
 import math
 
+def compute_gradient_penalty(D, real_samples, fake_samples, src_mask, phi=1.0):
+    """Calculates the gradient penalty loss for WGAN GP"""
+    # Random weight term for interpolation between real and fake samples
+    alpha = torch.rand((1, real_samples.size(1), 1), device=real_samples.get_device())
+    # Get random interpolation between real and fake samples
+    interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples)).requires_grad_(True)
+    d_interpolates = D(interpolates, src_mask)
+    fake = torch.ones([real_samples.shape[1], 1], requires_grad=False, device=real_samples.get_device())
+    # Get gradient w.r.t. interpolates
+    gradients = torch.autograd.grad(
+        outputs=d_interpolates,
+        inputs=interpolates,
+        grad_outputs=fake,
+        create_graph=True,
+        retain_graph=True,
+        only_inputs=True,
+    )[0]
+    gradients = gradients.contiguous()
+    gradient_penalty = ((gradients.norm(2, dim=(0,2)) - phi) ** 2).mean()
+    return gradient_penalty
+
+class TransformerGenerator(nn.Module):
+
+    def __init__(self, latent_dim: int, seq_len: int, d_model: int, nhead: int, d_hid: int,
+                 nlayers: int, dropout: float = 0.5, out_dim=91, device='cpu'):
+        super().__init__()
+        self.model_type = 'TransformerGenerator'
+        self.seq_len = seq_len
+        self.projection = nn.Linear(latent_dim, d_model * seq_len)
+        self.pos_embedding= PositionalEmbedding(d_model=d_model)
+        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, activation='relu')
+        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
+        self.d_model = d_model
+        self.decoder = nn.Linear(d_model, out_dim)
+
+    def forward(self, noise: Tensor, src_mask: Tensor) -> Tensor:
+        """
+        Args:
+            src: Tensor, shape [seq_len, batch_size, embedding_dim]
+            src_mask: Tensor, shape [seq_len, seq_len]
+
+        Returns:
+            output Tensor of shape [seq_len, batch_size, embedding_dim]
+        """
+        x = F.relu(self.projection(noise))
+        x = x.reshape(self.seq_len, x.shape[0], -1)
+        src = self.pos_embedding(x)
+        output = self.transformer_encoder(src, src_mask)
+        output = self.decoder(output)
+        return output
+
+class TransformerDiscriminator(nn.Module):
+
+    def __init__(self, seq_len: int, d_model: int, nhead: int, d_hid: int,
+                 nlayers: int, dropout: float = 0.5, out_dim=91, device='cpu'):
+        super().__init__()
+        self.model_type = 'TransformerDiscriminator'
+        self.seq_len = seq_len
+        self.pos_embedding= PositionalEmbedding(d_model=d_model)
+        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, activation='relu')
+        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
+        self.d_model = d_model
+        self.decoder = nn.Linear(d_model, out_dim)
+
+        self.motion_discriminator = MotionDiscriminator()
+
+
+    def forward(self, src: Tensor, src_mask: Tensor) -> Tensor:
+        """
+        Args:
+            src: Tensor, shape [seq_len, batch_size, embedding_dim]
+            src_mask: Tensor, shape [seq_len, seq_len]
+
+        Returns:
+            output Tensor of shape [seq_len, batch_size, embedding_dim]
+        """
+        src = self.pos_embedding(src)
+        output = self.transformer_encoder(src, src_mask)
+        output = F.leaky_relu(self.decoder(output).permute(1,2,0))
+        output = self.motion_discriminator(output)
+        return output
 
 
 class TransformerModel(nn.Module):
@@ -207,20 +288,19 @@ class InfoGANDiscriminator(nn.Module):
 
 class MotionDiscriminator(nn.Module):
 
-    def __init__(self, input_dim=95, hidden_dim=32, out_dim=128):
+    def __init__(self, in_channels=95, out_channels=32, out_dim=1):
         super().__init__()
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-        self.conv1d_1 = nn.Conv1d(self.input_dim, self.hidden_dim, kernel_size=3)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.conv1d_1 = nn.Conv1d(self.in_channels, self.out_channels, kernel_size=3)
         self.flatten = nn.Flatten()
-        self.linear1 = nn.Linear(896, 128)
-        self.linear2 = nn.Linear(128, out_dim)
+        self.linear1 = nn.Linear(960, out_dim)
 
     def forward(self, x):
         x = F.leaky_relu(self.conv1d_1(x))
         x = self.flatten(x)
-        x = F.leaky_relu(self.linear1(x))
-        x = self.linear2(x)
+        x = self.linear1(x)
+        
         return x
         
 
