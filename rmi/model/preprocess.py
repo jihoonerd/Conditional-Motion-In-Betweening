@@ -49,9 +49,12 @@ def vectorize_pose(root_p, local_q, contact, vector_dim, device):
     contact = torch.Tensor(contact).to(device)
 
     padding_dim = vector_dim - (root_p.shape[-1] + local_q.shape[-1] + contact.shape[-1])
-    dummy = torch.zeros([batch_size, seq_len, padding_dim], device=device)
-    out = torch.cat([root_p, local_q, contact, dummy], dim=2)
-    return out
+    if padding_dim != 0:
+        dummy = torch.zeros([batch_size, seq_len, padding_dim], device=device)
+        out = torch.cat([root_p, local_q, contact, dummy], dim=2)
+    else:
+        out = torch.cat([root_p, local_q, contact], dim=2)
+    return out, padding_dim
 
 
 def create_mask(pose_vector, device, mask_start=10, mask_end=49):
