@@ -17,7 +17,7 @@ from rmi.model.skeleton import Skeleton, sk_joints_to_remove, sk_offsets, sk_par
 import wandb
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
-from rmi.model.network import TransformerDiscriminator, TransformerGenerator, compute_gradient_penalty
+from rmi.model.network import MotionDiscriminator, TransformerGenerator, compute_gradient_penalty
 from rmi.model.preprocess import lerp_pose, vectorize_pose, replace_noise
 from utils.general import increment_path
 
@@ -77,7 +77,7 @@ def train(opt, device):
     tf_generator = TransformerGenerator(latent_dim=1024, seq_len=horizon, d_model=96, nhead=12, d_hid=1024, nlayers=6, dropout=0.1, out_dim=repr_dim, device=device)
     tf_generator.to(device)
 
-    tf_discriminator = TransformerDiscriminator(seq_len=horizon, d_model=162, nhead=9, d_hid=512, nlayers=4, dropout=0.0, out_dim=repr_dim, device=device)
+    tf_discriminator = MotionDiscriminator(in_channels=161, out_channels=32, out_dim=1)
     tf_discriminator.to(device)
 
     generator_optim = Adam(params=tf_generator.parameters(), lr=opt.generator_learning_rate, betas=(opt.optim_beta1, opt.optim_beta2))
@@ -118,13 +118,12 @@ def train(opt, device):
                 output_gt = pose_vectorized_gt[:,:,:repr_dim]
                 output_gt_w_pos = torch.cat([output_gt, global_pos_gt.reshape(current_batch_size, seq_len, -1).permute(1,0,2)], axis=2)
 
-                exp_dim = 1
-                fake_discriminator_input = torch.cat([output_w_pos, torch.zeros((seq_len,current_batch_size,exp_dim), device=device)], axis=2)
-                real_discriminator_input = torch.cat([output_gt_w_pos, torch.zeros((seq_len,current_batch_size,exp_dim), device=device)], axis=2)
+                fake_discriminator_input = output_w_pos
+                real_discriminator_input = output_gt_w_pos
 
-                fake_disc_d_out = tf_discriminator(fake_discriminator_input.detach(), src_mask)
+                fake_disc_d_out = tf_discriminator(fake_discriminator_input.permute(1,2,0).detach())
                 fake_disc_lsgan = torch.mean((fake_disc_d_out) ** 2)
-                real_disc_d_out = tf_discriminator(real_discriminator_input, src_mask)
+                real_disc_d_out = tf_discriminator(real_discriminator_input.permute(1,2,0))
                 real_disc_lsgan = torch.mean((real_disc_d_out -  1) ** 2)
 
                 total_d_loss = opt.loss_discriminator_weight * (real_disc_lsgan + fake_disc_lsgan)
@@ -135,7 +134,7 @@ def train(opt, device):
                 discriminator_optim.step()
 
             with amp.autocast(enabled=cuda):
-                gen_fake_disc_d_out = tf_discriminator(fake_discriminator_input, src_mask)
+                gen_fake_disc_d_out = tf_discriminator(fake_discriminator_input.permute(1,2,0))
                 gen_fake_ls_gan = torch.mean((gen_fake_disc_d_out -  1) ** 2)
                 total_g_loss = opt.loss_generator_weight * gen_fake_ls_gan
 
@@ -169,7 +168,7 @@ def parse_opt():
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_walk/', help='path to save pickled processed data')
-    parser.add_argument('--batch_size', type=int, default=128, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=32, help='batch size')
     parser.add_argument('--epochs', type=int, default=10000)
     parser.add_argument('--device', default='2', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
