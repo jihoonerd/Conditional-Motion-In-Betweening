@@ -29,7 +29,7 @@ def test(opt, device):
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, target_action=['walk'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     
     # LERP In-betweening Frames
     from_idx, target_idx = 9, 40 # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
@@ -37,8 +37,12 @@ def test(opt, device):
     root_lerped, local_q_lerped = replace_noise(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
     contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
-    pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)[:,from_idx:target_idx+1,:]
-    pose_vectorized_lerp = vectorize_pose(root_lerped, local_q_lerped, contact_init, 96, device)[:,from_idx:target_idx+1,:]
+    pose_vec_gt, padding_dim = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)
+    pose_vectorized_gt = pose_vec_gt[:,from_idx:target_idx+1,:]
+
+    pose_vec_lerped, _ = vectorize_pose(root_lerped, local_q_lerped, contact_init, 96, device)
+    pose_vectorized_lerp = pose_vec_lerped[:,from_idx:target_idx+1,:]
+
 
     # Extract dimension from processed data
     root_v_dim = lafan_dataset.root_v_dim
@@ -55,7 +59,7 @@ def test(opt, device):
     # fixed_code = 3
     # pose_vectorized_lerp[:,:,repr_dim + fixed_code] = 1
 
-    test_idx = [2,6,7,8,9,10,12,15,17]
+    test_idx = [50,150,300,450]
 
     model = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim, device=device)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
@@ -112,10 +116,10 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--ckpt_path', type=str, default='train-600.pt', help='weights path')
+    parser.add_argument('--ckpt_path', type=str, default='All_NOISE_800.pt', help='weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data_walk/', help='path to save pickled processed data')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
     opt = parser.parse_args()
     return opt
