@@ -292,15 +292,16 @@ class MotionDiscriminator(nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.conv1d_1 = nn.Conv1d(self.in_channels, self.out_channels, kernel_size=3)
+        self.conv1d_1 = nn.Conv1d(self.in_channels, 128, kernel_size=5)
+        self.conv1d_2 = nn.Conv1d(128, out_channels, kernel_size=3)
         self.flatten = nn.Flatten()
-        self.linear1 = nn.Linear(960, out_dim)
+        self.linear1 = nn.Linear(896, out_dim)
 
     def forward(self, x):
         x = F.leaky_relu(self.conv1d_1(x))
+        x = F.leaky_relu(self.conv1d_2(x))
         x = self.flatten(x)
         x = self.linear1(x)
-        
         return x
         
 
