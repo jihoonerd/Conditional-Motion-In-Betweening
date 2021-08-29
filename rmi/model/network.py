@@ -1,6 +1,7 @@
 import torch
 from torch import nn, Tensor
 from torch.nn.modules.activation import ReLU
+from torch.nn.modules.transformer import TransformerDecoderLayer
 from rmi.model.plu import PLU
 import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
@@ -20,15 +21,20 @@ class Seq2SeqTransformer(nn.Module):
                  out_dim: int=91,
                  dropout: float = 0.1):
         super(Seq2SeqTransformer, self).__init__()
-        self.transformer = Transformer(d_model=emb_size,
-                                       nhead=nhead,
-                                       num_encoder_layers=num_encoder_layers,
-                                       num_decoder_layers=num_decoder_layers,
-                                       dim_feedforward=dim_feedforward,
-                                       dropout=dropout)
 
         self.src_pos_emb = PositionalEmbedding(d_model=emb_size)
+        encoder_layers = TransformerEncoderLayer(emb_size, nhead, dim_feedforward, dropout, activation='relu')
+        self.transformer_encoder = TransformerEncoder(encoder_layers, num_encoder_layers)
+        self.encoder_bottleneck1 = nn.Linear(3072, 1024)
+        self.encoder_bottleneck2 = nn.Linear(1024, 256)
+
+        self.decoder_bottleneck1 = nn.Linear(256, 1024)
+        self.decoder_bottleneck2 = nn.Linear(1024, 3072)
         self.trg_pos_emb= PositionalEmbedding(d_model=emb_size)
+        decoder_layers = TransformerDecoderLayer(emb_size, nhead, dim_feedforward, dropout, activation='relu')
+        self.transformer_decoder = nn.TransformerDecoder(decoder_layers, num_decoder_layers)
+
+
         self.generator = nn.Linear(emb_size, out_dim)
 
 
@@ -41,16 +47,35 @@ class Seq2SeqTransformer(nn.Module):
                 tgt_padding_mask: Tensor=None,
                 memory_key_padding_mask: Tensor=None):
         src_emb = self.src_pos_emb(src)
-        tgt_emb = self.trg_pos_emb(trg)
-        outs = self.transformer(src_emb, tgt_emb, src_mask, tgt_mask, None,
-                                src_padding_mask, tgt_padding_mask, memory_key_padding_mask)
-        return self.generator(outs)
+        tf_enc_out = self.transformer_encoder(src_emb)
+        output = torch.flatten(tf_enc_out.permute(1,0,2), start_dim=1)
+        output = F.relu(self.encoder_bottleneck1(output))
+        output = self.encoder_bottleneck2(output)
+
+        output = F.relu(self.decoder_bottleneck1(output))
+        output = self.decoder_bottleneck2(output)
+        output = output.reshape(src_emb.shape)
+        output = self.trg_pos_emb(output)
+        output = self.transformer_decoder(output, tf_enc_out)
+        output = self.generator(output)
+        return output
 
     def encode(self, src: Tensor):
-        return self.transformer.encoder(self.src_pos_emb(src))
+        src_emb = self.src_pos_emb(src)
+        tf_enc_out = self.transformer_encoder(src_emb)
+        output = torch.flatten(tf_enc_out.permute(1,0,2), start_dim=1)
+        output = F.relu(self.encoder_bottleneck1(output))
+        output = self.encoder_bottleneck2(output)
+        return output
 
-    def decode(self, tgt: Tensor, memory: Tensor, tgt_mask: Tensor):
-        return self.transformer.decoder(self.trg_pos_emb(tgt), memory, tgt_mask)
+    def decode(self, context_vector: Tensor, memory: Tensor, tgt_mask: Tensor):
+        output = F.relu(self.decoder_bottleneck1(context_vector))
+        output = self.decoder_bottleneck2(output)
+        output = output.reshape(memory.shape)
+        output = self.trg_pos_emb(output)
+        output = self.transformer_decoder(output, memory)
+        output = self.generator(output)
+        return output
 
 
 def compute_gradient_penalty(D, real_samples, fake_samples, src_mask, phi=1.0):
