@@ -2,16 +2,17 @@ python train_tfseq2seq.py \
 	--processed_data_dir="processed_data_all/" \
 	--batch_size=64 \
 	--epochs=10000 \
-	--device=1 \
+	--device=0 \
 	--entity=rilab-motion \
-	--exp_name="AE_TF_SEQ2SEQ" \
-	--save_interval=300 \
+	--exp_name="AE_TF_SEQ2SEQ_btnck_512" \
+	--save_interval=200 \
 	--generator_learning_rate=0.001 \
 	--discriminator_learning_rate=0.0001 \
-	--optim_beta1=0.9 \
+	--optim_beta1=0.5 \
 	--optim_beta2=0.99 \
 	--loss_recon_weight=1.0 \
-	--loss_fk_weight=0.01
+	--loss_fk_weight=0.1 \
+	--bottleneck_dim=512
 
 	# --loss_generator_weight=1.0 \
 	# --loss_discriminator_weight=1.0

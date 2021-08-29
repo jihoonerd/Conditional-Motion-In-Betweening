@@ -12,13 +12,14 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 from rmi.model.skeleton import Skeleton, sk_joints_to_remove, sk_offsets, sk_parents
-
+import numpy as np
 import wandb
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import Seq2SeqTransformer
 from rmi.model.preprocess import lerp_pose, vectorize_pose, replace_noise
 from utils.general import increment_path
+from sklearn import preprocessing
 
 LOGGER = logging.getLogger(__name__)
 
@@ -37,11 +38,6 @@ def train(opt, device):
     # Set device to use
     cuda = device.type != 'cpu'
     epochs = opt.epochs
-                          
-    # Loggers
-    LOGGER.info(f"Start with 'tensorboard --logdir {opt.project}")
-    summary_writer = SummaryWriter(str(save_dir))
-    wandb.init(config=opt, project="RMIB-InfoGAN", entity=opt.entity, name=opt.exp_name, dir=opt.save_dir)
 
     # Load Skeleton
     skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
@@ -52,7 +48,7 @@ def train(opt, device):
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['walk'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     
     # Replace to noise for inbetweening frames
     from_idx, target_idx = 9, 40 # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
@@ -64,7 +60,14 @@ def train(opt, device):
     global_pos = torch.Tensor(lafan_dataset.data['global_pos']).to(device)
     global_pos_gt = global_pos[:,from_idx:target_idx+1,:]
 
-    tensor_dataset = TensorDataset(pose_vectorized_gt, global_pos_gt)
+
+    le = preprocessing.LabelEncoder()
+    seq_cat = [x[:-1] for x in lafan_dataset.data['seq_names']]
+    le_np = le.fit_transform(seq_cat)
+    cdict = {i: le.classes_[i] for i in range(len(le.classes_))}
+    seq_labels = torch.Tensor(le_np).type(torch.int8).to(device)
+
+    tensor_dataset = TensorDataset(pose_vectorized_gt, global_pos_gt, seq_labels)
     lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
 
     # Extract dimension from processed data
@@ -74,67 +77,64 @@ def train(opt, device):
     repr_dim = root_v_dim + local_q_dim + contact_dim
 
     tf_seq2seq = Seq2SeqTransformer(num_encoder_layers=3, num_decoder_layers=3, emb_size=96, nhead=12, dim_feedforward=512, out_dim=repr_dim, bottleneck_dim=opt.bottleneck_dim)
+    ckpt = torch.load(opt.prt_weight, map_location=device)
+    tf_seq2seq.load_state_dict(ckpt['tf_generator_state_dict'])
     tf_seq2seq.to(device)
+    tf_seq2seq.eval()
 
-    ae_optim = Adam(params=tf_seq2seq.parameters(), lr=opt.generator_learning_rate, betas=(opt.optim_beta1, opt.optim_beta2))
-    generator_scheduler = torch.optim.lr_scheduler.StepLR(ae_optim, step_size=600, gamma=0.8)
 
-    l1_loss = torch.nn.L1Loss()
+    pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
 
-    LOGGER.info(f'Starting training for {epochs} epochs...')
-    for epoch in range(1, epochs + 1):
+    context_vector = []
+    seq_label_list = []
 
-        pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
+    for pose_vectorized_gt, global_pos_gt, seq_label in pbar:
 
-        log_dict = {}
+        seq_label_list.extend(seq_label.cpu().detach().tolist())
+        pose_vectorized_gt = pose_vectorized_gt.permute(1,0,2)
+        seq_len = pose_vectorized_gt.shape[0]
+        current_batch_size = pose_vectorized_gt.shape[1]
 
-        for pose_vectorized_gt, global_pos_gt in pbar:
-
-            pose_vectorized_gt = pose_vectorized_gt.permute(1,0,2)
-            seq_len = pose_vectorized_gt.shape[0]
-            current_batch_size = pose_vectorized_gt.shape[1]
-
-            src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
-            src_mask = src_mask.to(device)
-            
-            with amp.autocast(enabled=cuda):
-
-                output = tf_seq2seq(pose_vectorized_gt, pose_vectorized_gt)
-
-                root_pred = output[:,:,:root_v_dim].permute(1,0,2)
-                quat_pred = output[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
-                quat_pred_ = quat_pred.view(quat_pred.shape[0], quat_pred.shape[1], lafan_dataset.num_joints, 4)
-                quat_pred_ = quat_pred_ / torch.norm(quat_pred_, dim = -1, keepdim = True)
-                global_pos_pred = skeleton_mocap.forward_kinematics(quat_pred_, root_pred)
-
-                recon_loss = l1_loss(output, pose_vectorized_gt[:,:,:repr_dim])
-                fk_loss = l1_loss(global_pos_pred, global_pos_gt)
-
-                total_ae_loss = opt.loss_recon_weight * recon_loss + opt.loss_fk_weight * fk_loss
+        src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
+        src_mask = src_mask.to(device)
         
-            ae_optim.zero_grad()
-            total_ae_loss.backward()
-            ae_optim.step()
+        with amp.autocast(enabled=cuda):
 
-        log_dict.update({"Train/Loss/Recon Loss": opt.loss_recon_weight * recon_loss})
-        log_dict.update({"Train/Loss/FK Loss": opt.loss_fk_weight * fk_loss}) 
-        log_dict.update({"Train/Loss/Total Loss": total_ae_loss})       
+            output = tf_seq2seq.encode(pose_vectorized_gt)
+            context_vector.append(tf_seq2seq.encode(pose_vectorized_gt).cpu().detach().numpy())
 
-        for k, v in log_dict.items():
-            summary_writer.add_scalar(k, v, epoch)
-        wandb.log(log_dict)        
+    context_vector_set = np.concatenate(context_vector, axis=0)
 
-        # Save model
-        if (epoch % save_interval) == 0:
-            ckpt = {'epoch': epoch,
-                    'tf_generator_state_dict': tf_seq2seq.state_dict(),
-                    'ae_optim_state_dict': ae_optim.state_dict()}
-            torch.save(ckpt, os.path.join(wdir, f'train-{epoch}.pt'))
-            print(f"{epoch} Epoch: model weights saved")
+    import umap
+    reducer = umap.UMAP(n_neighbors=300, n_components=3, min_dist=0.3, metric='cosine', random_state=42)
+    embedding = reducer.fit_transform(context_vector_set[:2000])
+    print(embedding.shape)
 
-    wandb.run.finish()
-    torch.cuda.empty_cache()
+    import matplotlib.pyplot as plt
+    from matplotlib import cm
 
+    fig, ax = plt.subplots(figsize=(15,8))
+    ax = fig.add_subplot(projection='3d')
+
+    x = embedding[:,0]
+    y = embedding[:,1]
+    z = embedding[:,2]
+
+    for k,v in cdict.items():
+        if v == 'walk':
+            walk_id = k
+        if v == 'obstacles':
+            obstacles_id = k
+
+    for g in np.unique(seq_label_list[:2000]):
+        if g in [walk_id, obstacles_id]:
+            continue
+        ix = np.where(seq_label_list[:2000] == g)
+        ax.scatter(x[ix], y[ix], z[ix], label=cdict[g], alpha=0.5)
+    ax.legend(loc='upper left', bbox_to_anchor=(1.0, 0.5))
+    plt.title('UMAP projection', fontsize=12)
+    plt.show()
+    plt.savefig('umap.png')
 
 def parse_opt():
     parser = argparse.ArgumentParser()
@@ -160,8 +160,8 @@ def parse_opt():
     parser.add_argument('--loss_contact_weight', type=float, default=0.2, help='loss_contact_weight')
     parser.add_argument('--loss_global_pos_weight', type=float, default=1.0, help='loss_global_pos_weight')
     parser.add_argument('--loss_fk_weight', type=float, default=0.1, help='loss_fk_weight')
-    parser.add_argument('--bottleneck_dim', type=int, default=512, help='bottleneck_dim')
-    parser.add_argument('--prt_weight', default='All_NOISE_800.pt')
+    parser.add_argument('--bottleneck_dim', type=int, default=256, help='bottleneck_dim')
+    parser.add_argument('--prt_weight', default='AE-300.pt')
     opt = parser.parse_args()
     return opt
 

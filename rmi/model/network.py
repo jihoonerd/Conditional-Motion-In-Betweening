@@ -19,16 +19,17 @@ class Seq2SeqTransformer(nn.Module):
                  nhead: int,
                  dim_feedforward: int = 512,
                  out_dim: int=91,
-                 dropout: float = 0.1):
+                 dropout: float = 0.1,
+                 bottleneck_dim: int=256):
         super(Seq2SeqTransformer, self).__init__()
 
         self.src_pos_emb = PositionalEmbedding(d_model=emb_size)
         encoder_layers = TransformerEncoderLayer(emb_size, nhead, dim_feedforward, dropout, activation='relu')
         self.transformer_encoder = TransformerEncoder(encoder_layers, num_encoder_layers)
         self.encoder_bottleneck1 = nn.Linear(3072, 1024)
-        self.encoder_bottleneck2 = nn.Linear(1024, 256)
+        self.encoder_bottleneck2 = nn.Linear(1024, bottleneck_dim)
 
-        self.decoder_bottleneck1 = nn.Linear(256, 1024)
+        self.decoder_bottleneck1 = nn.Linear(bottleneck_dim, 1024)
         self.decoder_bottleneck2 = nn.Linear(1024, 3072)
         self.trg_pos_emb= PositionalEmbedding(d_model=emb_size)
         decoder_layers = TransformerDecoderLayer(emb_size, nhead, dim_feedforward, dropout, activation='relu')

@@ -61,7 +61,7 @@ class LAFAN1Dataset(Dataset):
         # This uses method provided with LAFAN1.
         # X and Q are local position/quaternion. Motions are rotated to make 10th frame facing X+ position.
         # Refer to paper 3.1 Data formatting
-        X, Q, parents, contacts_l, contacts_r = extract.get_lafan1_set(
+        X, Q, parents, contacts_l, contacts_r, seq_names = extract.get_lafan1_set(
             self.lafan_path, self.actors, self.target_action, self.window, self.offset
         )
 
@@ -87,6 +87,7 @@ class LAFAN1Dataset(Dataset):
         input_data["global_pos"] = global_pos[
             :, :, :, :
         ]  # global position (N, 50, 22, 30) why not just global_pos
+        input_data['seq_names'] = seq_names
         return input_data
 
     def __len__(self):
