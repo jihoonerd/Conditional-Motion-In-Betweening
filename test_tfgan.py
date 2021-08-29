@@ -9,7 +9,7 @@ from pymo.parsers import BVHParser
 import imageio
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
-from rmi.model.network import TransformerGenerator
+from rmi.model.network import TransformerGenerator, TransformerModel
 from rmi.model.preprocess import lerp_pose, vectorize_pose, replace_noise
 from rmi.vis.pose import plot_pose
 
@@ -52,6 +52,8 @@ def test(opt, device):
     model.load_state_dict(ckpt['tf_generator_state_dict'])
     model.eval()
 
+    
+
     input_noise = torch.randn(1, 1024, device=device)
     output = model(input_noise, src_mask)
 
@@ -85,7 +87,7 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--ckpt_path', type=str, default='train-800.pt', help='weights path')
+    parser.add_argument('--ckpt_path', type=str, default='train-400.pt', help='weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_walk/', help='path to save pickled processed data')
