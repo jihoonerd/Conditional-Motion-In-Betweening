@@ -73,7 +73,7 @@ def train(opt, device):
     contact_dim = lafan_dataset.contact_dim
     repr_dim = root_v_dim + local_q_dim + contact_dim
 
-    tf_seq2seq = Seq2SeqTransformer(num_encoder_layers=3, num_decoder_layers=3, emb_size=96, nhead=12, dim_feedforward=512, out_dim=repr_dim)
+    tf_seq2seq = Seq2SeqTransformer(num_encoder_layers=3, num_decoder_layers=3, emb_size=96, nhead=12, dim_feedforward=512, out_dim=repr_dim, bottleneck_dim=opt.bottleneck_dim)
     tf_seq2seq.to(device)
 
     ae_optim = Adam(params=tf_seq2seq.parameters(), lr=opt.generator_learning_rate, betas=(opt.optim_beta1, opt.optim_beta2))
@@ -142,10 +142,10 @@ def parse_opt():
     parser.add_argument('--weights', type=str, default='', help='weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data_walk/', help='path to save pickled processed data')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=10000)
-    parser.add_argument('--device', default='1', help='cuda device, i.e. 0 or -1 or cpu')
+    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=50, help='Log model after every "save_period" epoch')
@@ -160,6 +160,7 @@ def parse_opt():
     parser.add_argument('--loss_contact_weight', type=float, default=0.2, help='loss_contact_weight')
     parser.add_argument('--loss_global_pos_weight', type=float, default=1.0, help='loss_global_pos_weight')
     parser.add_argument('--loss_fk_weight', type=float, default=0.1, help='loss_fk_weight')
+    parser.add_argument('--bottleneck_dim', type=int, default=512, help='bottleneck_dim')
     parser.add_argument('--prt_weight', default='All_NOISE_800.pt')
     opt = parser.parse_args()
     return opt
