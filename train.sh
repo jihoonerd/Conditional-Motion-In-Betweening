@@ -1,17 +1,20 @@
-python train_tfgan.py \
-	--processed_data_dir="processed_data_walk/" \
+python train_tfseq2seq.py \
+	--processed_data_dir="processed_data_all/" \
 	--batch_size=64 \
 	--epochs=10000 \
-	--device=0 \
+	--device=1 \
 	--entity=rilab-motion \
-	--exp_name="A:TFLSGAN128_0.25" \
-	--save_interval=400 \
+	--exp_name="AE_SEQ2SEQ" \
+	--save_interval=300 \
 	--generator_learning_rate=0.001 \
 	--discriminator_learning_rate=0.0001 \
 	--optim_beta1=0.9 \
 	--optim_beta2=0.99 \
-	--loss_generator_weight=1.0 \
-	--loss_discriminator_weight=1.0
+	--loss_recon_weight=1.0 \
+	--loss_fk_weight=0.01
+
+	# --loss_generator_weight=1.0 \
+	# --loss_discriminator_weight=1.0
 	# --cr_learning_rate=0.0001 \
 	# --loss_root_weight=0.01 \
 	# --loss_quat_weight=1.0 \

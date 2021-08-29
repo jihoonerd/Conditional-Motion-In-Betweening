@@ -110,14 +110,15 @@ def train(opt, device):
                 recon_loss = l1_loss(output, pose_vectorized_gt[:,:,:repr_dim])
                 fk_loss = l1_loss(global_pos_pred, global_pos_gt)
 
-                total_ae_loss = recon_loss + fk_loss
+                total_ae_loss = opt.loss_recon_weight * recon_loss + opt.loss_fk_weight * fk_loss
         
             ae_optim.zero_grad()
             total_ae_loss.backward()
             ae_optim.step()
 
-        log_dict.update({"Train/Loss/Recon Loss": recon_loss})
-        log_dict.update({"Train/Loss/FK Loss": fk_loss})       
+        log_dict.update({"Train/Loss/Recon Loss": opt.loss_recon_weight})
+        log_dict.update({"Train/Loss/FK Loss": opt.loss_fk_weight * fk_loss}) 
+        log_dict.update({"Train/Loss/Total Loss": total_ae_loss})       
 
         for k, v in log_dict.items():
             summary_writer.add_scalar(k, v, epoch)
@@ -153,19 +154,12 @@ def parse_opt():
     parser.add_argument('--cr_learning_rate', type=float, default=0.001, help='crh_infogan learning rate')
     parser.add_argument('--optim_beta1', type=float, default=0.5, help='optim_beta1')
     parser.add_argument('--optim_beta2', type=float, default=0.99, help='optim_beta2')
+    parser.add_argument('--loss_recon_weight', type=float, default=1.0, help='loss_recon_weight')
     parser.add_argument('--loss_root_weight', type=float, default=0.01, help='loss_pos_weight')
     parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
     parser.add_argument('--loss_contact_weight', type=float, default=0.2, help='loss_contact_weight')
     parser.add_argument('--loss_global_pos_weight', type=float, default=1.0, help='loss_global_pos_weight')
-    parser.add_argument('--loss_discriminator_weight', type=float, default=1.0, help='loss_gan_discriminator_weight')
-    parser.add_argument('--loss_generator_weight', type=float, default=1.0, help='loss_gan_weight')
-    parser.add_argument('--loss_code_weight', type=float, default=1.0, help='loss_code_weight')
-    parser.add_argument('--infogan_disc_code', type=int, default=3, help='number of discrete codes for InfoGAN')
-    parser.add_argument('--infogan_cont_code', type=int, default=0, help='number of continuous codes for InfoGAN')
-    parser.add_argument('--loss_crh_weight', type=float, default=0.2, help='weight of H in InfoGAN-CR')
-    parser.add_argument('--latent_dim', type=int, default=1024, help='input noise dimension')
-    parser.add_argument('--gp_lambda', type=float, default=10, help='lambda for WGANGP')
-    parser.add_argument('--n_critic', type=int, default=5, help='number of discriminator updates per generator update')
+    parser.add_argument('--loss_fk_weight', type=float, default=0.1, help='loss_fk_weight')
     parser.add_argument('--prt_weight', default='All_NOISE_800.pt')
     opt = parser.parse_args()
     return opt
