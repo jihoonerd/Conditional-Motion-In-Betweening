@@ -116,7 +116,7 @@ def train(opt, device):
             total_ae_loss.backward()
             ae_optim.step()
 
-        log_dict.update({"Train/Loss/Recon Loss": opt.loss_recon_weight})
+        log_dict.update({"Train/Loss/Recon Loss": opt.loss_recon_weight * recon_loss})
         log_dict.update({"Train/Loss/FK Loss": opt.loss_fk_weight * fk_loss}) 
         log_dict.update({"Train/Loss/Total Loss": total_ae_loss})       
 

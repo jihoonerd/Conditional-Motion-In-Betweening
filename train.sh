@@ -4,7 +4,7 @@ python train_tfseq2seq.py \
 	--epochs=10000 \
 	--device=1 \
 	--entity=rilab-motion \
-	--exp_name="AE_SEQ2SEQ" \
+	--exp_name="AE_TF_SEQ2SEQ" \
 	--save_interval=300 \
 	--generator_learning_rate=0.001 \
 	--discriminator_learning_rate=0.0001 \
