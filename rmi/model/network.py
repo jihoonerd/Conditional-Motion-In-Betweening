@@ -6,6 +6,52 @@ import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from rmi.model.positional_encoding import PositionalEmbedding
 import math
+from torch.nn import Transformer
+
+
+
+class Seq2SeqTransformer(nn.Module):
+    def __init__(self,
+                 num_encoder_layers: int,
+                 num_decoder_layers: int,
+                 emb_size: int,
+                 nhead: int,
+                 dim_feedforward: int = 512,
+                 out_dim: int=91,
+                 dropout: float = 0.1):
+        super(Seq2SeqTransformer, self).__init__()
+        self.transformer = Transformer(d_model=emb_size,
+                                       nhead=nhead,
+                                       num_encoder_layers=num_encoder_layers,
+                                       num_decoder_layers=num_decoder_layers,
+                                       dim_feedforward=dim_feedforward,
+                                       dropout=dropout)
+
+        self.src_pos_emb = PositionalEmbedding(d_model=emb_size)
+        self.trg_pos_emb= PositionalEmbedding(d_model=emb_size)
+        self.generator = nn.Linear(emb_size, out_dim)
+
+
+    def forward(self,
+                src: Tensor,
+                trg: Tensor,
+                src_mask: Tensor=None,
+                tgt_mask: Tensor=None,
+                src_padding_mask: Tensor=None,
+                tgt_padding_mask: Tensor=None,
+                memory_key_padding_mask: Tensor=None):
+        src_emb = self.src_pos_emb(src)
+        tgt_emb = self.trg_pos_emb(trg)
+        outs = self.transformer(src_emb, tgt_emb, src_mask, tgt_mask, None,
+                                src_padding_mask, tgt_padding_mask, memory_key_padding_mask)
+        return self.generator(outs)
+
+    def encode(self, src: Tensor):
+        return self.transformer.encoder(self.src_pos_emb(src))
+
+    def decode(self, tgt: Tensor, memory: Tensor, tgt_mask: Tensor):
+        return self.transformer.decoder(self.trg_pos_emb(tgt), memory, tgt_mask)
+
 
 def compute_gradient_penalty(D, real_samples, fake_samples, src_mask, phi=1.0):
     """Calculates the gradient penalty loss for WGAN GP"""
@@ -28,6 +74,21 @@ def compute_gradient_penalty(D, real_samples, fake_samples, src_mask, phi=1.0):
     gradient_penalty = ((gradients.norm(2, dim=(0,2)) - phi) ** 2).mean()
     return gradient_penalty
 
+
+class LinearProjection(nn.Module):
+
+    def __init__(self, latent_dim:1024, d_model=95, seq_len=32):
+        super().__init__()
+        self.seq_len=32
+        self.projection = nn.Linear(latent_dim, d_model * seq_len)
+
+    def forward(self, noise):
+        x = self.projection(noise)
+        x = x.reshape(self.seq_len, x.shape[0], -1)
+        return x
+
+
+        
 class TransformerGenerator(nn.Module):
 
     def __init__(self, latent_dim: int, seq_len: int, d_model: int, nhead: int, d_hid: int,
@@ -295,7 +356,7 @@ class MotionDiscriminator(nn.Module):
         self.conv1d_1 = nn.Conv1d(self.in_channels, 128, kernel_size=5)
         self.conv1d_2 = nn.Conv1d(128, out_channels, kernel_size=3)
         self.flatten = nn.Flatten()
-        self.linear1 = nn.Linear(896, out_dim)
+        self.linear1 = nn.Linear(832, out_dim)
 
     def forward(self, x):
         x = F.leaky_relu(self.conv1d_1(x))

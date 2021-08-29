@@ -4,9 +4,8 @@ import os
 from pathlib import Path
 
 import torch
-import torch.nn as nn
+from torch.nn.functional import l1_loss
 import yaml
-from pymo.parsers import BVHParser
 from torch.cuda import amp
 from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
@@ -17,7 +16,7 @@ from rmi.model.skeleton import Skeleton, sk_joints_to_remove, sk_offsets, sk_par
 import wandb
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
-from rmi.model.network import MotionDiscriminator, TransformerGenerator, compute_gradient_penalty, TransformerModel, LinearProjection
+from rmi.model.network import Seq2SeqTransformer
 from rmi.model.preprocess import lerp_pose, vectorize_pose, replace_noise
 from utils.general import increment_path
 
@@ -74,25 +73,13 @@ def train(opt, device):
     contact_dim = lafan_dataset.contact_dim
     repr_dim = root_v_dim + local_q_dim + contact_dim
 
-    tf_generator = TransformerGenerator(latent_dim=1024, seq_len=horizon, d_model=96, nhead=12, d_hid=1024, nlayers=6, dropout=0.1, out_dim=repr_dim, device=device)
-    
-    pretrained_encoder = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim, device=device)
-    ckpt = torch.load(opt.prt_weight, map_location=device)
-    pretrained_encoder.load_state_dict(ckpt['transformer_encoder_state_dict'])
-    pretrained_encoder.to(device)
-    pretrained_encoder.train()
+    tf_seq2seq = Seq2SeqTransformer(num_encoder_layers=3, num_decoder_layers=3, emb_size=96, nhead=12, dim_feedforward=512, out_dim=repr_dim)
+    tf_seq2seq.to(device)
 
-    lin_proj = LinearProjection(latent_dim=1024, d_model=96, seq_len=32)
-    lin_proj.to(device)
+    ae_optim = Adam(params=tf_seq2seq.parameters(), lr=opt.generator_learning_rate, betas=(opt.optim_beta1, opt.optim_beta2))
+    generator_scheduler = torch.optim.lr_scheduler.StepLR(ae_optim, step_size=600, gamma=0.8)
 
-    tf_discriminator = MotionDiscriminator(in_channels=161, out_channels=32, out_dim=1)
-    tf_discriminator.to(device)
-
-    generator_optim = Adam(params=list(pretrained_encoder.parameters()) + list(lin_proj.parameters()), lr=opt.generator_learning_rate, betas=(opt.optim_beta1, opt.optim_beta2))
-    generator_scheduler = torch.optim.lr_scheduler.StepLR(generator_optim, step_size=600, gamma=0.8)
-
-    discriminator_optim = Adam(params=tf_discriminator.parameters(), lr=opt.discriminator_learning_rate, betas=(opt.optim_beta1, opt.optim_beta2))
-    discriminator_scheudler = torch.optim.lr_scheduler.StepLR(discriminator_optim, step_size=600, gamma=0.8)
+    l1_loss = torch.nn.L1Loss()
 
     LOGGER.info(f'Starting training for {epochs} epochs...')
     for epoch in range(1, epochs + 1):
@@ -107,15 +94,12 @@ def train(opt, device):
             seq_len = pose_vectorized_gt.shape[0]
             current_batch_size = pose_vectorized_gt.shape[1]
 
-            input_noise = torch.randn(current_batch_size, opt.latent_dim, device=device)
-
             src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
             src_mask = src_mask.to(device)
             
             with amp.autocast(enabled=cuda):
 
-                projected = lin_proj(input_noise)
-                output = pretrained_encoder(projected, src_mask)
+                output = tf_seq2seq(pose_vectorized_gt, pose_vectorized_gt)
 
                 root_pred = output[:,:,:root_v_dim].permute(1,0,2)
                 quat_pred = output[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
@@ -123,36 +107,17 @@ def train(opt, device):
                 quat_pred_ = quat_pred_ / torch.norm(quat_pred_, dim = -1, keepdim = True)
                 global_pos_pred = skeleton_mocap.forward_kinematics(quat_pred_, root_pred)
 
-                output_w_pos = torch.cat([output, global_pos_pred.reshape(current_batch_size, seq_len, -1).permute(1,0,2)], axis=2)
+                recon_loss = l1_loss(output, pose_vectorized_gt[:,:,:repr_dim])
+                fk_loss = l1_loss(global_pos_pred, global_pos_gt)
 
-                output_gt = pose_vectorized_gt[:,:,:repr_dim]
-                output_gt_w_pos = torch.cat([output_gt, global_pos_gt.reshape(current_batch_size, seq_len, -1).permute(1,0,2)], axis=2)
-
-                fake_discriminator_input = output_w_pos
-                real_discriminator_input = output_gt_w_pos
-
-                fake_disc_d_out = tf_discriminator(fake_discriminator_input.permute(1,2,0).detach())
-                fake_disc_lsgan = torch.mean((fake_disc_d_out) ** 2)
-                real_disc_d_out = tf_discriminator(real_discriminator_input.permute(1,2,0))
-                real_disc_lsgan = torch.mean((real_disc_d_out -  1) ** 2)
-
-                total_d_loss = opt.loss_discriminator_weight * (real_disc_lsgan + fake_disc_lsgan)
+                total_ae_loss = recon_loss + fk_loss
         
-            discriminator_optim.zero_grad()
-            total_d_loss.backward()
-            discriminator_optim.step()
+            ae_optim.zero_grad()
+            total_ae_loss.backward()
+            ae_optim.step()
 
-            with amp.autocast(enabled=cuda):
-                gen_fake_disc_d_out = tf_discriminator(fake_discriminator_input.permute(1,2,0))
-                gen_fake_ls_gan = torch.mean((gen_fake_disc_d_out -  1) ** 2)
-                total_g_loss = opt.loss_generator_weight * gen_fake_ls_gan
-
-            generator_optim.zero_grad()
-            total_g_loss.backward()
-            generator_optim.step()
-
-        log_dict.update({"Train/Loss/Discriminator Loss": total_d_loss})
-        log_dict.update({"Train/Loss/Generator Loss": total_g_loss})       
+        log_dict.update({"Train/Loss/Recon Loss": recon_loss})
+        log_dict.update({"Train/Loss/FK Loss": fk_loss})       
 
         for k, v in log_dict.items():
             summary_writer.add_scalar(k, v, epoch)
@@ -161,8 +126,8 @@ def train(opt, device):
         # Save model
         if (epoch % save_interval) == 0:
             ckpt = {'epoch': epoch,
-                    'tf_generator_state_dict': tf_generator.state_dict(),
-                    'generator_optim_state_dict': generator_optim.state_dict()}
+                    'tf_generator_state_dict': tf_seq2seq.state_dict(),
+                    'ae_optim_state_dict': ae_optim.state_dict()}
             torch.save(ckpt, os.path.join(wdir, f'train-{epoch}.pt'))
             print(f"{epoch} Epoch: model weights saved")
 
