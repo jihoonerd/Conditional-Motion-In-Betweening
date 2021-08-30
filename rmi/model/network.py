@@ -184,7 +184,7 @@ class TransformerModel(nn.Module):
         super().__init__()
         self.model_type = 'Transformer'
         self.seq_len = seq_len
-        self.pos_embedding= PositionalEmbedding(d_model=d_model)
+        self.pos_embedding= PositionalEmbedding(seq_len=seq_len, d_model=d_model)
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, activation='relu')
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.d_model = d_model
@@ -197,7 +197,7 @@ class TransformerModel(nn.Module):
         self.decoder.bias.data.zero_()
         self.decoder.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src: Tensor, src_mask: Tensor) -> Tensor:
+    def forward(self, src: Tensor, src_mask: Tensor, cond_code: Tensor) -> Tensor:
         """
         Args:
             src: Tensor, shape [seq_len, batch_size, embedding_dim]
@@ -206,7 +206,7 @@ class TransformerModel(nn.Module):
         Returns:
             output Tensor of shape [seq_len, batch_size, embedding_dim]
         """
-        src = self.pos_embedding(src)
+        src = self.pos_embedding(src, cond_code)
         output = self.transformer_encoder(src, src_mask)
         output = self.decoder(output)
         return output
