@@ -2,7 +2,7 @@ import argparse
 import logging
 import os
 from pathlib import Path
-
+import numpy as np
 import torch
 import torch.nn as nn
 import yaml
@@ -20,6 +20,8 @@ from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
 from rmi.model.preprocess import lerp_pose, vectorize_pose, replace_noise
 from utils.general import increment_path
+from sklearn.preprocessing import LabelEncoder
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -53,7 +55,7 @@ def train(opt, device):
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=['walk'], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     
     # Replace to noise for inbetweening frames
     from_idx, target_idx = 9, 40 # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
@@ -61,12 +63,22 @@ def train(opt, device):
     root_noised, local_q_noised = replace_noise(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
     contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
-    pose_vectorized_gt = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)[:,from_idx:target_idx+1,:]
-    pose_vectorized_noised = vectorize_pose(root_noised, local_q_noised, contact_init, 96, device)[:,from_idx:target_idx+1,:]
+    pose_vec_gt, padding_dim = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)
+    pose_vectorized_gt = pose_vec_gt[:,from_idx:target_idx+1,:]
+    
+    pose_vec_noised, padding_dim = vectorize_pose(root_noised, local_q_noised, contact_init, 96, device)
+    pose_vectorized_noised = pose_vec_noised[:,from_idx:target_idx+1,:]
     global_pos = torch.Tensor(lafan_dataset.data['global_pos']).to(device)
     global_pos_gt = global_pos[:,from_idx:target_idx+1,:]
 
-    tensor_dataset = TensorDataset(pose_vectorized_noised, pose_vectorized_gt, global_pos_gt)
+    seq_categories = [x[:-1] for x in lafan_dataset.data['seq_names']]
+
+    le = LabelEncoder()
+    le_np = le.fit_transform(seq_categories)
+    seq_labels = torch.Tensor(le_np).type(torch.int64).unsqueeze(1).to(device)
+    np.save('le_classes_.npy', le.classes_)
+    
+    tensor_dataset = TensorDataset(pose_vectorized_noised, pose_vectorized_gt, global_pos_gt, seq_labels)
     lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
 
     # Extract dimension from processed data
@@ -79,7 +91,7 @@ def train(opt, device):
     transformer_encoder.to(device)
 
     l1_loss = nn.L1Loss()
-    optim = Adam(params=transformer_encoder.parameters(), lr=opt.generator_learning_rate, betas=(opt.optim_beta1, opt.optim_beta2))
+    optim = Adam(params=transformer_encoder.parameters(), lr=opt.learning_rate, betas=(opt.optim_beta1, opt.optim_beta2))
     scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=200, gamma=0.75)
 
     scaler = amp.GradScaler(enabled=cuda)
@@ -89,7 +101,7 @@ def train(opt, device):
 
         pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
 
-        for pose_vectorized_noised, pose_vectorized_gt, global_pos_gt in pbar:
+        for pose_vectorized_noised, pose_vectorized_gt, global_pos_gt, seq_label in pbar:
 
             pose_vectorized_gt = pose_vectorized_gt.permute(1,0,2)
             pose_vectorized_noised = pose_vectorized_noised.permute(1,0,2)
@@ -99,7 +111,7 @@ def train(opt, device):
             src_mask = src_mask.to(device)
             
             with amp.autocast(enabled=cuda):
-                output = transformer_encoder(pose_vectorized_noised, src_mask)
+                output = transformer_encoder(pose_vectorized_noised, src_mask, seq_label)
 
                 root_pred = output[:,:,:root_v_dim].permute(1,0,2)
                 quat_pred = output[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
@@ -163,28 +175,20 @@ def parse_opt():
     parser.add_argument('--weights', type=str, default='', help='weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data_walk_dance/', help='path to save pickled processed data')
-    parser.add_argument('--batch_size', type=int, default=8 , help='batch size')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
+    parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--device', default='1', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=50, help='Log model after every "save_period" epoch')
-    parser.add_argument('--generator_learning_rate', type=float, default=0.0001, help='generator_learning_rate')
-    parser.add_argument('--discriminator_learning_rate', type=float, default=0.0001, help='discriminator_learning_rate')
-    parser.add_argument('--cr_learning_rate', type=float, default=0.001, help='crh_infogan learning rate')
+    parser.add_argument('--learning_rate', type=float, default=0.0001, help='generator_learning_rate')
     parser.add_argument('--optim_beta1', type=float, default=0.9, help='optim_beta1')
     parser.add_argument('--optim_beta2', type=float, default=0.99, help='optim_beta2')
     parser.add_argument('--loss_root_weight', type=float, default=0.01, help='loss_pos_weight')
     parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
     parser.add_argument('--loss_contact_weight', type=float, default=0.2, help='loss_contact_weight')
     parser.add_argument('--loss_global_pos_weight', type=float, default=0.01, help='loss_global_pos_weight')
-    parser.add_argument('--loss_discriminator_weight', type=float, default=1.0, help='loss_gan_discriminator_weight')
-    parser.add_argument('--loss_generator_weight', type=float, default=1.0, help='loss_gan_weight')
-    parser.add_argument('--loss_code_weight', type=float, default=1.0, help='loss_code_weight')
-    parser.add_argument('--infogan_disc_code', type=int, default=3, help='number of discrete codes for InfoGAN')
-    parser.add_argument('--infogan_cont_code', type=int, default=0, help='number of continuous codes for InfoGAN')
-    parser.add_argument('--loss_crh_weight', type=float, default=0.2, help='weight of H in InfoGAN-CR')
     opt = parser.parse_args()
     return opt
 
