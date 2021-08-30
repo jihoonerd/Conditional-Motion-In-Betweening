@@ -6,12 +6,12 @@ import math
 class PositionalEmbedding(nn.Module):
     def __init__(self, seq_len: int=32, d_model: int=96):
         super().__init__()
-        self.pos_emb = nn.Embedding(seq_len, d_model)
-        self.cond_emb = nn.Embedding(seq_len, d_model)
+        self.pos_emb = nn.Embedding(seq_len + 1, d_model)
+        self.cond_emb = nn.Embedding(seq_len + 1, d_model)
 
     def forward(self, inputs, cond_code):
-        positions = torch.arange(inputs.size(0), device=inputs.device).expand(inputs.size(1), inputs.size(0)).contiguous()+1
-        conditions = cond_code.expand(inputs.size(1), inputs.size(0))
+        positions = torch.arange(inputs.size(0), device=inputs.device).expand(inputs.size(1), inputs.size(0)).contiguous() + 1
+        conditions = cond_code.expand(inputs.size(1), inputs.size(0)).contiguous()
         outputs = inputs + self.pos_emb(positions).permute(1,0,2) + self.cond_emb(conditions).permute(1,0,2)
         return outputs
 

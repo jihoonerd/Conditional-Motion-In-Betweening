@@ -178,7 +178,7 @@ def parse_opt():
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--device', default='1', help='cuda device, i.e. 0 or -1 or cpu')
+    parser.add_argument('--device', default='2', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=50, help='Log model after every "save_period" epoch')
