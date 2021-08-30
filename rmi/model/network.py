@@ -206,8 +206,8 @@ class TransformerModel(nn.Module):
         Returns:
             output Tensor of shape [seq_len, batch_size, embedding_dim]
         """
-        src = self.pos_embedding(src, cond_code)
-        output = self.transformer_encoder(src, src_mask)
+        output = self.pos_embedding(src, cond_code)
+        output = self.transformer_encoder(output, src_mask)
         output = self.decoder(output)
         return output
 
