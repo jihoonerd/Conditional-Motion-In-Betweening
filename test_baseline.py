@@ -9,7 +9,7 @@ import imageio
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import lerp_pose, vectorize_pose, replace_noise
+from rmi.model.preprocess import vectorize_pose, replace_noise
 from rmi.vis.pose import plot_pose
 from sklearn.preprocessing import LabelEncoder
 import glob
@@ -36,7 +36,7 @@ def test(opt, device):
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
     lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     
-    # LERP In-betweening Frames
+    # Replace with noise to In-betweening Frames
     from_idx, target_idx = 9, 40 # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
     horizon = target_idx - from_idx + 1
     root_noised, local_q_noised = replace_noise(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
@@ -70,7 +70,7 @@ def test(opt, device):
     conditioning_labels = np.expand_dims((np.repeat(seq_id[0], repeats=len(seq_categories))), axis=1)
     conditioning_labels = torch.Tensor(conditioning_labels).type(torch.int64).to(device)
 
-    test_idx = [150,300,500,700,800,1000,1200]
+    test_idx = [150,300,500,700,800,1000,1200,1600]
 
     model = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim, device=device)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
@@ -87,14 +87,14 @@ def test(opt, device):
     pos_pred = skeleton_mocap.forward_kinematics(quat_fk, root_fk)
 
 
-    quat_lerped = torch.Tensor(local_q_noised[test_idx, from_idx:target_idx+1])
-    quat_lerped = quat_lerped / torch.norm(quat_lerped, dim = -1, keepdim = True)
-    pos_lerped = skeleton_mocap.forward_kinematics( 
-                                            quat_lerped,
+    quat_noised = torch.Tensor(local_q_noised[test_idx, from_idx:target_idx+1])
+    quat_noised_ = quat_noised / torch.norm(quat_noised, dim = -1, keepdim = True)
+    pos_noised = skeleton_mocap.forward_kinematics( 
+                                            quat_noised_,
                                             torch.Tensor(root_noised[test_idx,from_idx:target_idx+1,:]) 
                                             )
 
-    # Compare Lerp, Prediction, GT
+    # Compare Input data, Prediction, GT
     for i in range(len(test_idx)):
         save_path = os.path.join(opt.save_path, 'test_' + f'{test_idx[i]}')
         Path(save_path).mkdir(parents=True, exist_ok=True)
@@ -106,18 +106,18 @@ def test(opt, device):
         for t in range(horizon):
             
             # TODO: final frame does not match
-            lerp_img_path = os.path.join(save_path, 'input')
-            plot_pose(start_pose, pos_lerped[i,t].detach().numpy(), target_pose, t, skeleton_mocap, save_dir=lerp_img_path, prefix='input')
+            input_img_path = os.path.join(save_path, 'input')
+            plot_pose(start_pose, pos_noised[i,t].detach().numpy(), target_pose, t, skeleton_mocap, save_dir=input_img_path, prefix='input')
             pred_img_path = os.path.join(save_path, 'pred_img')
             plot_pose(start_pose, pos_pred[i,t].detach().numpy(), target_pose, t, skeleton_mocap, save_dir=pred_img_path, prefix='pred')
             gt_img_path = os.path.join(save_path, 'gt_img')
             plot_pose(start_pose, lafan_dataset.data['global_pos'][test_idx[i], t+from_idx], target_pose, t, skeleton_mocap, save_dir=gt_img_path, prefix='gt')
 
-            lerp_img = Image.open(os.path.join(lerp_img_path, 'input'+str(t)+'.png'), 'r')
+            input_img = Image.open(os.path.join(input_img_path, 'input'+str(t)+'.png'), 'r')
             pred_img = Image.open(os.path.join(pred_img_path, 'pred'+str(t)+'.png'), 'r')
             gt_img = Image.open(os.path.join(gt_img_path, 'gt'+str(t)+'.png'), 'r')
             
-            img_aggr_list.append(np.concatenate([lerp_img, pred_img, gt_img.resize(pred_img.size)], 1))
+            img_aggr_list.append(np.concatenate([input_img, pred_img, gt_img.resize(pred_img.size)], 1))
 
         # Save images
         gif_path = os.path.join(save_path, f'img_{test_idx[i]}.gif')
@@ -132,10 +132,9 @@ def parse_opt():
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
-    parser.add_argument('--motion_type', type=str, default='walk', help='motion type')
+    parser.add_argument('--motion_type', type=str, default='dance', help='motion type')
     opt = parser.parse_args()
     return opt
-
 
 if __name__ == "__main__":
     opt = parse_opt()

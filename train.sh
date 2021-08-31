@@ -1,10 +1,10 @@
-python train.py \
+python train_maximum_horizon.py \
 	--processed_data_dir="processed_data_all/" \
 	--batch_size=64 \
 	--epochs=10000 \
 	--device=3 \
 	--entity=rilab-motion \
-	--exp_name="COND_BERT(64 lgp 0.05)" \
+	--exp_name="COND_BERT(64 max horizon)" \
 	--save_interval=200 \
 	--learning_rate=0.0001 \
 	--optim_beta1=0.9 \
@@ -12,4 +12,4 @@ python train.py \
 	--loss_root_weight=0.01 \
 	--loss_quat_weight=1.0 \
 	--loss_contact_weight=0.2 \
-	--loss_global_pos_weight=0.05
+	--loss_global_pos_weight=0.01
