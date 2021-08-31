@@ -1,27 +1,15 @@
-python train_tfseq2seq.py \
+python train.py \
 	--processed_data_dir="processed_data_all/" \
 	--batch_size=64 \
 	--epochs=10000 \
-	--device=0 \
+	--device=3 \
 	--entity=rilab-motion \
-	--exp_name="AE_TF_SEQ2SEQ_btnck_512" \
+	--exp_name="COND_BERT(64 lgp 0.05)" \
 	--save_interval=200 \
-	--generator_learning_rate=0.001 \
-	--discriminator_learning_rate=0.0001 \
-	--optim_beta1=0.5 \
+	--learning_rate=0.0001 \
+	--optim_beta1=0.9 \
 	--optim_beta2=0.99 \
-	--loss_recon_weight=1.0 \
-	--loss_fk_weight=0.1 \
-	--bottleneck_dim=512
-
-	# --loss_generator_weight=1.0 \
-	# --loss_discriminator_weight=1.0
-	# --cr_learning_rate=0.0001 \
-	# --loss_root_weight=0.01 \
-	# --loss_quat_weight=1.0 \
-	# --loss_contact_weight=0.2 \
-	# --loss_global_pos_weight=0.01
-	# --loss_code_weight=0.5 \
-	# --infogan_disc_code=4 \
-	# --infogan_cont_code=0 \
-	# --loss_crh_weight=0.15
+	--loss_root_weight=0.01 \
+	--loss_quat_weight=1.0 \
+	--loss_contact_weight=0.2 \
+	--loss_global_pos_weight=0.05
