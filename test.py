@@ -1,278 +1,141 @@
 import argparse
 import os
 from pathlib import Path
-
-import imageio
 import numpy as np
 import torch
-from kpt.model.skeleton import TorchSkeleton
+from rmi.model.skeleton import Skeleton, sk_joints_to_remove, sk_offsets, sk_parents
 from PIL import Image
-from pymo.parsers import BVHParser
-from torch.utils.data import DataLoader
-from mpl_toolkits import mplot3d
-
+import imageio
 from rmi.data.lafan1_dataset import LAFAN1Dataset
-from rmi.data.utils import generate_infogan_code, write_json
-from rmi.model.network import (Decoder, InfoGANDiscriminator, InfoganCodeEncoder,
-                               InputEncoder, LSTMNetwork, DInfoGAN,
-                               QInfoGAN)
-from rmi.model.positional_encoding import PositionalEncoding
+from rmi.data.utils import flip_bvh
+from rmi.model.network import TransformerModel
+from rmi.model.preprocess import lerp_pose, vectorize_pose, replace_noise
 from rmi.vis.pose import plot_pose
-from utils.general import increment_path
-from utils.torch_utils import select_device
-import matplotlib
-matplotlib.use('Agg')
+from sklearn.preprocessing import LabelEncoder
+
 
 def test(opt, device):
 
-    save_dir, pretrained_weights, data_path = opt.save_dir, opt.pretrained_weights, opt.data_path    
-    device = torch.device("cpu")
 
-
-    infogan_cont_code = opt.infogan_cont_code 
-    infogan_disc_code = opt.infogan_disc_code
-    conditioning_disc_code = opt.conditioning_disc_code
-    conditioning_cont_code = opt.conditioning_cont_code
-    cont_value = opt.cont_value 
-    save_dir = Path(save_dir)
+    save_dir = Path(os.path.join('runs', 'train', opt.exp_name))
+    wdir = save_dir / 'weights'
+    weights = sorted(os.listdir(wdir))
+    latest_weights = wdir / weights[-1]
+    ckpt = torch.load(latest_weights, map_location=device)
+    print(f"Loaded weight: {latest_weights}")
 
     # Load Skeleton
-    parsed = BVHParser().parse(opt.skeleton_path)
-    skeleton = TorchSkeleton(skeleton=parsed.skeleton, root_name='Hips', device=device)
+    skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
+    skeleton_mocap.remove_joints(sk_joints_to_remove)
+    
+    # Flip, Load and preprocess data. It utilizes LAFAN1 utilities
+    flip_bvh(opt.data_path)
 
-    # Load and preprocess data. It utilizes LAFAN1 utilities
+    # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset_test = LAFAN1Dataset(lafan_path=data_path, processed_data_dir=opt.processed_data_dir, train=False, target_action=['walk','dance','jump'], start_seq_length=30, cur_seq_length=30, max_transition_length=30, device=device)
-    lafan_data_loader_test = DataLoader(lafan_dataset_test, batch_size=opt.batch_size, shuffle=False, num_workers=opt.data_loader_workers)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
+    
+    # LERP In-betweening Frames
+    from_idx, target_idx = 9, 40 # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
+    horizon = target_idx - from_idx + 1
+    root_noised, local_q_noised = replace_noise(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
+    contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
-    inference_batch_index = opt.inference_batch_index
+    pose_vec_gt, padding_dim = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)
+    pose_vectorized_gt = pose_vec_gt[:,from_idx:target_idx+1,:]
+
+    pose_vec_noised, _ = vectorize_pose(root_noised, local_q_noised, contact_init, 96, device)
+    pose_vectorized_noised = pose_vec_noised[:,from_idx:target_idx+1,:]
 
     # Extract dimension from processed data
-    root_v_dim = lafan_dataset_test.root_v_dim
-    local_q_dim = lafan_dataset_test.local_q_dim
-    contact_dim = lafan_dataset_test.contact_dim
+    root_v_dim = lafan_dataset.root_v_dim
+    local_q_dim = lafan_dataset.local_q_dim
+    contact_dim = lafan_dataset.contact_dim
+    repr_dim = root_v_dim + local_q_dim + contact_dim
 
-    # Initializing networks
-    ckpt = torch.load(pretrained_weights, map_location=torch.device(device))
-    # Initializing networks
-    state_in = root_v_dim + local_q_dim + contact_dim
-    offset_in = root_v_dim + local_q_dim
-    target_in = local_q_dim
-    state_encoder = InputEncoder(input_dim=state_in)
-    state_encoder.to(device)
+    pose_vectorized_gt = pose_vectorized_gt.permute(1,0,2)
+    pose_vectorized_noised = pose_vectorized_noised.permute(1,0,2)
 
-    offset_encoder = InputEncoder(input_dim=offset_in)
-    offset_encoder.to(device)
+    src_mask = torch.zeros((horizon, horizon), device=device).type(torch.bool)
+    src_mask = src_mask.to(device)
 
-    target_encoder = InputEncoder(input_dim=target_in)
-    target_encoder.to(device)
+    seq_categories = [x[:-1] for x in lafan_dataset.data['seq_names']]
 
-    # LSTM
-    lstm_hidden = opt.lstm_hidden
-    lstm_in = state_encoder.out_dim * 3 + (infogan_disc_code + infogan_cont_code)
-    lstm = LSTMNetwork(input_dim=lstm_in, hidden_dim=lstm_hidden, device=device)
-    lstm.to(device)
+    le = LabelEncoder()
+    le.classes_ = np.load(os.path.join(save_dir, 'le_classes_.npy'))
 
-    # Decoder
-    decoder = Decoder(input_dim=lstm_hidden, out_dim=state_in)
-    decoder.to(device)
+    target_seq = 'dance'
+    seq_id = np.where(le.classes_==target_seq)[0]
+    conditioning_labels = np.expand_dims((np.repeat(seq_id[0], repeats=len(seq_categories))), axis=1)
+    conditioning_labels = torch.Tensor(conditioning_labels).type(torch.int64).to(device)
 
-    #Load to FP32
-    state_dict_state_encoder = ckpt['state_encoder']
-    state_encoder.load_state_dict(state_dict_state_encoder)  
+    test_idx = [10, 20, 30, 40, 50, 60, 70, 80, 90, 150,300,500,700,800,1000,1200]
 
-    state_dict_target_encoder = ckpt['target_encoder']
-    target_encoder.load_state_dict(state_dict_target_encoder)  
-    
-    state_dict_offset_encoder = ckpt['offset_encoder']
-    offset_encoder.load_state_dict(state_dict_offset_encoder)  
+    model = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim, device=device)
+    model.load_state_dict(ckpt['transformer_encoder_state_dict'])
+    model.eval()
 
-    state_dict_lstm = ckpt['lstm']
-    lstm.load_state_dict(state_dict_lstm)  
+    output = model(pose_vectorized_noised, src_mask, conditioning_labels)
 
-    state_dict_decoder = ckpt['decoder']
-    decoder.load_state_dict(state_dict_decoder)
+    root_pred = output[:,test_idx,:root_v_dim].permute(1,0,2)
+    quat_pred = output[:,test_idx,root_v_dim:root_v_dim+local_q_dim].permute(1,0,2)
 
-    infogan_cont_code = ckpt['cont_code']
-    infogan_disc_code = ckpt['disc_code']
-    pe = PositionalEncoding(dimension=256, max_len=lafan_dataset_test.max_transition_length)
+    root_fk = root_pred
+    quat_fk = quat_pred.reshape(len(test_idx), horizon, lafan_dataset.num_joints, 4)
+    quat_fk = quat_fk / torch.norm(quat_fk, dim = -1, keepdim = True)
+    pos_pred = skeleton_mocap.forward_kinematics(quat_fk, root_fk)
 
-    print("MODELS LOADED WITH SAVED WEIGHTS")
 
-    state_encoder.eval()
-    offset_encoder.eval()
-    target_encoder.eval()
-    lstm.eval()
-    decoder.eval()
-    
-    for i_batch, sampled_batch in enumerate(lafan_data_loader_test):
-        img_gt = []
-        img_pred = []
-        img_integrated = []
+    quat_lerped = torch.Tensor(local_q_noised[test_idx, from_idx:target_idx+1])
+    quat_lerped = quat_lerped / torch.norm(quat_lerped, dim = -1, keepdim = True)
+    pos_lerped = skeleton_mocap.forward_kinematics( 
+                                            quat_lerped,
+                                            torch.Tensor(root_noised[test_idx,from_idx:target_idx+1,:]) 
+                                            )
 
-        current_batch_size = len(sampled_batch['global_pos'])
-        with torch.no_grad():
+    # Compare Lerp, Prediction, GT
+    for i in range(len(test_idx)):
+        save_path = os.path.join(opt.save_path, 'test_' + f'{test_idx[i]}')
+        Path(save_path).mkdir(parents=True, exist_ok=True)
+
+        start_pose =  lafan_dataset.data['global_pos'][test_idx[i], from_idx]
+        target_pose = lafan_dataset.data['global_pos'][test_idx[i], target_idx+1]
+
+        img_aggr_list = []
+        for t in range(horizon):
             
-            # state input
-            local_q = sampled_batch['local_q'].to(device)
-            root_v = sampled_batch['root_v'].to(device)
-            contact = sampled_batch['contact'].to(device)
-            # offset input
-            root_p_offset = sampled_batch['root_p_offset'].to(device)
-            local_q_offset = sampled_batch['local_q_offset'].to(device)
-            local_q_offset = local_q_offset.view(current_batch_size, -1)
-            # target input
-            target = sampled_batch['q_target'].to(device)
-            target = target.view(current_batch_size, -1)
-            # root pos
-            root_p = sampled_batch['root_p'].to(device)
-            # global pos
-            global_pos = sampled_batch['global_pos'].to(device)
+            # TODO: final frame does not match
+            lerp_img_path = os.path.join(save_path, 'input')
+            plot_pose(start_pose, pos_lerped[i,t].detach().numpy(), target_pose, t, skeleton_mocap, save_dir=lerp_img_path, prefix='input')
+            pred_img_path = os.path.join(save_path, 'pred_img')
+            plot_pose(start_pose, pos_pred[i,t].detach().numpy(), target_pose, t, skeleton_mocap, save_dir=pred_img_path, prefix='pred')
+            gt_img_path = os.path.join(save_path, 'gt_img')
+            plot_pose(start_pose, lafan_dataset.data['global_pos'][test_idx[i], t+from_idx], target_pose, t, skeleton_mocap, save_dir=gt_img_path, prefix='gt')
 
-            lstm.init_hidden(current_batch_size)
-
-            # InfoGAN code
-            infogan_disc_code_gen = torch.zeros(current_batch_size, infogan_disc_code)
-            infogan_disc_code_gen[:,conditioning_disc_code] = 1
-            infogan_cont_code_gen = torch.zeros(current_batch_size, infogan_cont_code)
-            infogan_cont_code_gen[:,conditioning_cont_code] = cont_value
-            infogan_code_gen = torch.cat([infogan_disc_code_gen, infogan_cont_code_gen], dim=1)
-
-            training_frames = opt.training_frames
-            for t in range(training_frames):
-                # root pos
-                if t  == 0:
-                    root_p_t = root_p[:,t]
-                    root_v_t = root_v[:,t]
-                    local_q_t = local_q[:,t]
-                    local_q_t = local_q_t.view(local_q_t.size(0), -1)
-                    contact_t = contact[:,t]
-                else:
-                    root_p_t = root_pred  # Be careful about dimension
-                    root_v_t = root_v_pred[0]
-                    local_q_t = local_q_pred[0]
-                    contact_t = contact_pred[0]
-                    
-                assert root_p_offset.shape == root_p_t.shape
-
-                # state input
-                state_input = torch.cat([local_q_t, root_v_t, contact_t], -1)
-                # offset input
-                root_p_offset_t = root_p_offset - root_p_t
-                local_q_offset_t = local_q_offset - local_q_t
-                offset_input = torch.cat([root_p_offset_t, local_q_offset_t], -1)
-                # target input
-                target_input = target
-                
-                h_state = state_encoder(state_input)
-                h_offset = offset_encoder(offset_input)
-                h_target = target_encoder(target_input)
-                
-                # Use positional encoding
-                tta = training_frames - t
-                h_state = pe(h_state, tta)
-                h_offset = pe(h_offset, tta)
-                h_target = pe(h_target, tta)
-
-                offset_target = torch.cat([h_offset, h_target], dim=1)
-
-                # lstm
-                h_in = torch.cat([h_state, offset_target, infogan_code_gen], dim=1).unsqueeze(0)
-                h_out = lstm(h_in)
+            lerp_img = Image.open(os.path.join(lerp_img_path, 'input'+str(t)+'.png'), 'r')
+            pred_img = Image.open(os.path.join(pred_img_path, 'pred'+str(t)+'.png'), 'r')
+            gt_img = Image.open(os.path.join(gt_img_path, 'gt'+str(t)+'.png'), 'r')
             
-                # decoder
-                h_pred, contact_pred = decoder(h_out)
-                local_q_v_pred = h_pred[:,:,:target_in]
-                local_q_pred = local_q_v_pred + local_q_t
+            img_aggr_list.append(np.concatenate([lerp_img, pred_img, gt_img.resize(pred_img.size)], 1))
 
-                local_q_pred_ = local_q_pred.view(local_q_pred.size(0), local_q_pred.size(1), -1, 4)
-                local_q_pred_ = local_q_pred_ / torch.norm(local_q_pred_, dim = -1, keepdim = True)
+        # Save images
+        gif_path = os.path.join(save_path, f'img_{test_idx[i]}.gif')
+        imageio.mimsave(gif_path, img_aggr_list, duration=0.1)
+        print(f"ID {test_idx[i]}: test completed.")
 
-                root_v_pred = h_pred[:,:,target_in:]
-                root_pred = root_v_pred + root_p_t
-
-                # FK
-                root_pred = root_pred.squeeze()
-                local_q_pred_ = local_q_pred_.squeeze() # (seq, joint, 4)
-                pos_pred, rot_pred = skeleton.forward_kinematics(root_pred, local_q_pred_, rot_repr='quaternion')
-                
-                # Exporting
-                root_pred_t = root_pred[inference_batch_index].numpy()
-                local_q_pred_t = local_q_pred_[inference_batch_index].numpy()
-
-                start_pose = global_pos[inference_batch_index, 0].numpy()
-                in_between_pose = pos_pred[inference_batch_index].numpy()
-                in_between_true = global_pos[inference_batch_index, t].numpy()
-                target_pose = global_pos[inference_batch_index, training_frames-1].numpy()
-
-                pose_path = os.path.join(save_dir, f"{i_batch}")
-                Path(pose_path).mkdir(parents=True, exist_ok=True)
-
-                if t == 0: # root_pose[0] only root check
-                    write_json(filename=os.path.join(pose_path, f'start.json'), local_q=sampled_batch['local_q'][inference_batch_index][0].numpy(), root_pos=start_pose[0], joint_names=skeleton.joints)
-                    write_json(filename=os.path.join(pose_path, f'target.json'), local_q=sampled_batch['local_q'][inference_batch_index][-1].numpy(), root_pos=target_pose[0], joint_names=skeleton.joints)
-
-                write_json(filename=os.path.join(pose_path, f'{t:05}.json'), local_q=local_q_pred_t, root_pos=root_pred_t, joint_names=skeleton.joints)
-
-                if opt.plot:
-                    plot_pose(start_pose, in_between_pose, target_pose, t, skeleton, save_dir=save_dir, pred=True)
-                    plot_pose(start_pose, in_between_true, target_pose, t, skeleton, save_dir=save_dir, pred=False)
-                    img_path = os.path.join(save_dir, 'results/tmp/')
-                    Path(img_path).mkdir(parents=True, exist_ok=True)
-
-                    pred_img = Image.open(img_path +'pred_'+str(t)+'.png', 'r')
-                    gt_img = Image.open(img_path+ 'gt_'+str(t)+'.png', 'r')
-
-                    img_pred.append(pred_img)
-                    img_gt.append(gt_img)
-                    img_integrated.append(np.concatenate([pred_img, gt_img.resize(pred_img.size)], 1))
-            
-            if opt.plot:
-                # if i_batch < 49:
-                gif_path = os.path.join(opt.save_dir, 'img_%02d.gif' % i_batch)
-                imageio.mimsave(gif_path, img_integrated, duration=0.1)
-
-
-def parse_opt(known=False):
+def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--pretrained_weights', type=str, default=None, help='load weight .pt')
-    parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='dataset path')
-    parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='dataset path')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data/', help='dataset path')
-    parser.add_argument('--batch_size', type=int, default=64, help='total batch size for all GPUs')
-    parser.add_argument('--lstm_hidden', type=int, default=1024, help='total batch size for all GPUs')
-    parser.add_argument('--num_gifs', type=int, default=30, help='total batch size for all GPUs')
-    parser.add_argument('--training_frames', type=int, default=30, help='total batch size for all GPUs')
-    parser.add_argument('--inference_batch_index', type=int, default=20, help='total batch size for all GPUs')
-    parser.add_argument('--infogan_disc_code', type=int, default=2, help='# infogan disc code')
-    parser.add_argument('--infogan_cont_code', type=int, default=2, help='# infogan cont code ')
-    parser.add_argument('--conditioning_disc_code', type=int, default=1, help='target conditioning_disc_code')
-    parser.add_argument('--conditioning_cont_code', type=int, default=1, help='target conditioning_cont_code')    
-    parser.add_argument('--cont_value', type=int, default=1, help='continuous value [-1, 1]')    
-    parser.add_argument('--plot', type=bool, default=True, help='plot motion images')
-    parser.add_argument('--data_loader_workers', type=int, default=4, help='data_loader_workers')
-    parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--project', default='runs/test', help='save to project/name')
-    parser.add_argument('--entity', default=None, help='W&B entity')
-    parser.add_argument('--exp_name', default='exp', help='save to project/name')
-    parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    opt = parser.parse_known_args()[0] if known else parser.parse_args()
+    parser.add_argument('--project', default='runs/train', help='project/name')
+    parser.add_argument('--exp_name', default='COND_BERT(64 base)', help='experiment name')
+    parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
+    parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
+    parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
+    opt = parser.parse_args()
     return opt
 
-def main(opt):
-    opt.exp_name = opt.exp_name
-    opt.save_dir = str(increment_path(Path(opt.project) / opt.exp_name, exist_ok=opt.exist_ok))
-    device = select_device(opt.device, batch_size=opt.batch_size)
-    test(opt, device)
-
-
-def run(**kwargs):
-    # Usage: import train; train.run(weights='RMIB_InfoGAN.pt')
-    opt = parse_opt(True)
-    for k, v in kwargs.items():
-        setattr(opt, k, v)
-    main(opt)
 
 if __name__ == "__main__":
     opt = parse_opt()
-    main(opt)
+    device = torch.device("cpu")
+    test(opt, device)
