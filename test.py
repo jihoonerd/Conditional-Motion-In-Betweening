@@ -12,17 +12,18 @@ from rmi.model.network import TransformerModel
 from rmi.model.preprocess import lerp_pose, vectorize_pose, replace_noise
 from rmi.vis.pose import plot_pose
 from sklearn.preprocessing import LabelEncoder
-
+import glob
 
 def test(opt, device):
 
 
     save_dir = Path(os.path.join('runs', 'train', opt.exp_name))
     wdir = save_dir / 'weights'
-    weights = sorted(os.listdir(wdir))
-    latest_weights = wdir / weights[-1]
-    ckpt = torch.load(latest_weights, map_location=device)
-    print(f"Loaded weight: {latest_weights}")
+    weights = os.listdir(wdir)
+    weights_paths = [wdir / weight for weight in weights]
+    latest_weight = max(weights_paths , key = os.path.getctime)
+    ckpt = torch.load(latest_weight, map_location=device)
+    print(f"Loaded weight: {latest_weight}")
 
     # Load Skeleton
     skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
@@ -64,12 +65,12 @@ def test(opt, device):
     le = LabelEncoder()
     le.classes_ = np.load(os.path.join(save_dir, 'le_classes_.npy'))
 
-    target_seq = 'dance'
+    target_seq = opt.motion_type
     seq_id = np.where(le.classes_==target_seq)[0]
     conditioning_labels = np.expand_dims((np.repeat(seq_id[0], repeats=len(seq_categories))), axis=1)
     conditioning_labels = torch.Tensor(conditioning_labels).type(torch.int64).to(device)
 
-    test_idx = [10, 20, 30, 40, 50, 60, 70, 80, 90, 150,300,500,700,800,1000,1200]
+    test_idx = [150,300,500,700,800,1000,1200]
 
     model = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim, device=device)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
@@ -126,11 +127,12 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='COND_BERT(64 base)', help='experiment name')
+    parser.add_argument('--exp_name', default='COND_BERT(64 lgp 0.05)', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
+    parser.add_argument('--motion_type', type=str, default='walk', help='motion type')
     opt = parser.parse_args()
     return opt
 
