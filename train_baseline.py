@@ -2,26 +2,27 @@ import argparse
 import logging
 import os
 from pathlib import Path
+
 import numpy as np
 import torch
 import torch.nn as nn
+import wandb
 import yaml
 from pymo.parsers import BVHParser
+from sklearn.preprocessing import LabelEncoder
 from torch.cuda import amp
 from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
-from rmi.model.skeleton import Skeleton, sk_joints_to_remove, sk_offsets, sk_parents
 
-import wandb
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import lerp_pose, vectorize_pose, replace_noise
+from rmi.model.preprocess import replace_noise, vectorize_pose
+from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
+                                sk_parents)
 from utils.general import increment_path
-from sklearn.preprocessing import LabelEncoder
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -58,8 +59,10 @@ def train(opt, device):
     lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     
     # Replace to noise for inbetweening frames
-    from_idx, target_idx = 9, 40 # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
+    from_idx, target_idx = opt.from_idx, opt.target_idx  # default: 9-40, max: 48
     horizon = target_idx - from_idx + 1
+    print(f"Horizon: {horizon}")
+
     root_noised, local_q_noised = replace_noise(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
     contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
@@ -188,6 +191,8 @@ def parse_opt():
     parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
     parser.add_argument('--loss_contact_weight', type=float, default=0.2, help='loss_contact_weight')
     parser.add_argument('--loss_global_pos_weight', type=float, default=0.01, help='loss_global_pos_weight')
+    parser.add_argument('--from_idx', type=int, default=9, help='from idx')
+    parser.add_argument('--target_idx', type=int, default=40, help='target idx')
     opt = parser.parse_args()
     return opt
 

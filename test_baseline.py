@@ -37,8 +37,10 @@ def test(opt, device):
     lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     
     # Replace with noise to In-betweening Frames
-    from_idx, target_idx = opt.from_idx, opt.target_idx # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
+    from_idx, target_idx = opt.from_idx, opt.target_idx # default: 9-40, max: 48
     horizon = target_idx - from_idx + 1
+    print(f"HORIZON: {horizon}")
+
     root_noised, local_q_noised = replace_noise(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
     contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
@@ -70,9 +72,9 @@ def test(opt, device):
     conditioning_labels = np.expand_dims((np.repeat(seq_id[0], repeats=len(seq_categories))), axis=1)
     conditioning_labels = torch.Tensor(conditioning_labels).type(torch.int64).to(device)
 
-    test_idx = [150,300,500,700,800,1000,1200,1600]
+    test_idx = [150,300,500,700,800,1000,1200,1600,1610,1620]
 
-    model = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim, device=device)
+    model = TransformerModel(seq_len=horizon, d_model=96, nhead=12, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim, device=device)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
@@ -100,7 +102,7 @@ def test(opt, device):
         Path(save_path).mkdir(parents=True, exist_ok=True)
 
         start_pose =  lafan_dataset.data['global_pos'][test_idx[i], from_idx]
-        target_pose = lafan_dataset.data['global_pos'][test_idx[i], target_idx+1]
+        target_pose = lafan_dataset.data['global_pos'][test_idx[i], target_idx]
 
         img_aggr_list = []
         for t in range(horizon):
@@ -127,14 +129,14 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='COND_BERT(64 dimffwd2048)', help='experiment name')
+    parser.add_argument('--exp_name', default='COND_BERT(64 hor 9-49,test1)', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
-    parser.add_argument('--motion_type', type=str, default='dance', help='motion type')
+    parser.add_argument('--motion_type', type=str, default='jumps', help='motion type')
     parser.add_argument('--from_idx', default=9, type=int, help='start frame index')
-    parser.add_argument('--target_idx', default=40, type=int, help='end frame index')
+    parser.add_argument('--target_idx', default=49, type=int, help='end frame index')
     opt = parser.parse_args()
     return opt
 
