@@ -37,7 +37,7 @@ def test(opt, device):
     lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, target_action=[''], device=device, start_seq_length=30, cur_seq_length=30, max_transition_length=30)
     
     # Replace with noise to In-betweening Frames
-    from_idx, target_idx = 9, 40 # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
+    from_idx, target_idx = opt.from_idx, opt.target_idx # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
     horizon = target_idx - from_idx + 1
     root_noised, local_q_noised = replace_noise(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
     contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
@@ -127,12 +127,14 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='COND_BERT(64 lgp 0.05)', help='experiment name')
+    parser.add_argument('--exp_name', default='COND_BERT(64 dimffwd2048)', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
     parser.add_argument('--motion_type', type=str, default='dance', help='motion type')
+    parser.add_argument('--from_idx', default=9, type=int, help='start frame index')
+    parser.add_argument('--target_idx', default=40, type=int, help='end frame index')
     opt = parser.parse_args()
     return opt
 

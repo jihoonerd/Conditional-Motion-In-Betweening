@@ -112,7 +112,7 @@ def plot_pose(
     plt.title(title)
     prefix = prefix
     pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
-    plt.savefig(os.path.join(save_dir, prefix + str(frame_idx) + ".png"), dpi=80)
+    plt.savefig(os.path.join(save_dir, prefix + str(frame_idx) + ".png"), dpi=60)
     plt.close()
 
 def plot_pose_compare2(
