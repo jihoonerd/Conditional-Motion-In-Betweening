@@ -2,9 +2,9 @@ python train_maximum_horizon.py \
 	--processed_data_dir="processed_data_all/" \
 	--batch_size=64 \
 	--epochs=10000 \
-	--device=3 \
+	--device=1 \
 	--entity=rilab-motion \
-	--exp_name="COND_BERT(64 max horizon)" \
+	--exp_name="COND_BERT(64 dimffwd2048)" \
 	--save_interval=200 \
 	--learning_rate=0.0001 \
 	--optim_beta1=0.9 \
