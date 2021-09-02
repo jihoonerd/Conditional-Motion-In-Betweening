@@ -180,7 +180,7 @@ class TransformerDiscriminator(nn.Module):
 class TransformerModel(nn.Module):
 
     def __init__(self, seq_len: int, d_model: int, nhead: int, d_hid: int,
-                 nlayers: int, dropout: float = 0.5, out_dim=91, device='cpu'):
+                 nlayers: int, dropout: float = 0.5, out_dim=91):
         super().__init__()
         self.model_type = 'Transformer'
         self.seq_len = seq_len
@@ -189,7 +189,7 @@ class TransformerModel(nn.Module):
         self.d_hid = d_hid
         self.nlayers = nlayers
         self.pos_embedding= PositionalEmbedding(seq_len=seq_len, d_model=d_model)
-        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, activation='relu')
+        encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, activation='gelu')
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.decoder = nn.Linear(d_model, out_dim)
 
