@@ -90,7 +90,7 @@ def train(opt, device):
     contact_dim = lafan_dataset.contact_dim
     repr_dim = root_v_dim + local_q_dim + contact_dim
 
-    transformer_encoder = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=2048, nlayers=8, dropout=0.05, out_dim=repr_dim)
+    transformer_encoder = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=2048, nlayers=12, dropout=0.05, out_dim=repr_dim)
     transformer_encoder.to(device)
 
     l1_loss = nn.L1Loss()
