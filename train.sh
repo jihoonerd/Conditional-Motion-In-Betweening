@@ -2,10 +2,10 @@ python train_baseline.py \
 	--processed_data_dir="processed_data_all/" \
 	--batch_size=64 \
 	--epochs=3000 \
-	--device=3 \
+	--device=2 \
 	--entity=rilab-motion \
-	--exp_name="COND_BERT(64 d_hid 2048)" \
-	--save_interval=200 \
+	--exp_name="CMIP_BASE" \
+	--save_interval=100 \
 	--learning_rate=0.0001 \
 	--optim_beta1=0.9 \
 	--optim_beta2=0.99 \

@@ -197,7 +197,6 @@ def parse_opt():
     return opt
 
 
-
 if __name__ == "__main__":
     opt = parse_opt()
     opt.save_dir = str(increment_path(Path(opt.project) / opt.exp_name))

@@ -84,13 +84,13 @@ def test(opt, device):
     quat_pred = output[:,test_idx,root_v_dim:root_v_dim+local_q_dim].permute(1,0,2)
 
     root_fk = root_pred
-    quat_fk = quat_pred.reshape(len(test_idx), horizon, lafan_dataset.num_joints, 4)
-    quat_fk = quat_fk / torch.norm(quat_fk, dim = -1, keepdim = True)
-    pos_pred = skeleton_mocap.forward_kinematics(quat_fk, root_fk)
+    quat_fk_ = quat_pred.view(len(test_idx), horizon, lafan_dataset.num_joints, 4)
+    quat_fk_ = quat_fk_ / torch.norm(quat_fk_, dim = -1, keepdim = True)
+    pos_pred = skeleton_mocap.forward_kinematics(quat_fk_, root_fk)
 
 
-    quat_noised = torch.Tensor(local_q_noised[test_idx, from_idx:target_idx+1])
-    quat_noised_ = quat_noised / torch.norm(quat_noised, dim = -1, keepdim = True)
+    quat_noised_ = torch.Tensor(local_q_noised[test_idx, from_idx:target_idx+1])
+    quat_noised_ = quat_noised_ / torch.norm(quat_noised_, dim = -1, keepdim = True)
     pos_noised = skeleton_mocap.forward_kinematics( 
                                             quat_noised_,
                                             torch.Tensor(root_noised[test_idx,from_idx:target_idx+1,:]) 
@@ -129,14 +129,14 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='COND_BERT(64 hor 9-49,test1)', help='experiment name')
+    parser.add_argument('--exp_name', default='COND_BERT(64 base)', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
-    parser.add_argument('--motion_type', type=str, default='jumps', help='motion type')
+    parser.add_argument('--motion_type', type=str, default='dance', help='motion type')
     parser.add_argument('--from_idx', default=9, type=int, help='start frame index')
-    parser.add_argument('--target_idx', default=49, type=int, help='end frame index')
+    parser.add_argument('--target_idx', default=40, type=int, help='end frame index')
     opt = parser.parse_args()
     return opt
 
