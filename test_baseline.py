@@ -12,7 +12,7 @@ from rmi.model.network import TransformerModel
 from rmi.model.preprocess import vectorize_pose, replace_noise
 from rmi.vis.pose import plot_pose
 from sklearn.preprocessing import LabelEncoder
-import glob
+
 
 def test(opt, device):
 
