@@ -163,6 +163,13 @@ def train(opt, device):
         if (epoch % save_interval) == 0:
             ckpt = {'epoch': epoch,
                     'transformer_encoder_state_dict': transformer_encoder.state_dict(),
+                    'horizon': transformer_encoder.seq_len,
+                    'from_idx': opt.from_idx,
+                    'target_idx': opt.target_idx,
+                    'd_model': transformer_encoder.d_model,
+                    'nhead': transformer_encoder.nhead,
+                    'd_hid': transformer_encoder.d_hid,
+                    'nlayers': transformer_encoder.nlayers,
                     'optimizer_state_dict': optim.state_dict(),
                     'loss': total_g_loss}
             torch.save(ckpt, os.path.join(wdir, f'train-{epoch}.pt'))
