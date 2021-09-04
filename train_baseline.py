@@ -66,7 +66,7 @@ def train(opt, device):
     infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
     print(f"Horizon: {horizon}")
 
-    root_noised, local_q_noised = replace_infill(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
+    root_noised, local_q_noised = replace_infill(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx, infill_value=1.0)
     contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
     pose_vec_gt, padding_dim = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)

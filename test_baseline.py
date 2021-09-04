@@ -9,7 +9,7 @@ import imageio
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import vectorize_pose, replace_noise
+from rmi.model.preprocess import vectorize_pose, replace_noise, replace_infill
 from rmi.vis.pose import plot_pose
 from sklearn.preprocessing import LabelEncoder
 
@@ -39,9 +39,12 @@ def test(opt, device):
     # Replace with noise to In-betweening Frames
     from_idx, target_idx = ckpt['from_idx'], ckpt['target_idx'] # default: 9-40, max: 48
     horizon = ckpt['horizon']
+    infilling_code = np.zeros((1, horizon))
+    infilling_code[0, 1:-1] = 1
+    infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
     print(f"HORIZON: {horizon}")
 
-    root_noised, local_q_noised = replace_noise(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
+    root_noised, local_q_noised = replace_infill(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx, infill_value=1.0)
     contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
     pose_vec_gt, padding_dim = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)
@@ -78,7 +81,7 @@ def test(opt, device):
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
-    output = model(pose_vectorized_noised, src_mask, conditioning_labels)
+    output = model(pose_vectorized_noised, src_mask, conditioning_labels, infilling_code)
 
     root_pred = output[:,test_idx,:root_v_dim].permute(1,0,2)
     quat_pred = output[:,test_idx,root_v_dim:root_v_dim+local_q_dim].permute(1,0,2)
@@ -128,7 +131,7 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='COND_BERT(64 d_hid 2048)', help='experiment name')
+    parser.add_argument('--exp_name', default='CMIP_BASE_V02(ones,infill_emb,L12)', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')

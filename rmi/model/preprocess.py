@@ -26,24 +26,24 @@ def replace_noise(data, from_idx=9, target_idx=40, fixed=None):
     return root_p, local_q
 
 
-def replace_infill(data, from_idx=9, target_idx=40, fixed=None):
+def replace_infill(data, from_idx=9, target_idx=40, fixed=None, infill_value=1.0):
 
     root_p = data['root_p'].copy()
     local_q = data['local_q'].copy()
 
     if not fixed:
         # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
-        noise_root_p = np.zeros((root_p.shape[0], target_idx-from_idx-1, root_p.shape[2]))
+        noise_root_p = np.ones((root_p.shape[0], target_idx-from_idx-1, root_p.shape[2])) * infill_value
         root_p[:,from_idx+1:target_idx,:] = noise_root_p # Replace with noise from [from_idx, target_idx)
 
-        noise_local_q = np.zeros((local_q.shape[0], target_idx-from_idx-1, local_q.shape[2], local_q.shape[3]))
+        noise_local_q = np.ones((local_q.shape[0], target_idx-from_idx-1, local_q.shape[2], local_q.shape[3])) * infill_value
         local_q[:,from_idx+1:target_idx,:] = noise_local_q
     else:
-        noise_root_p = np.zeros((root_p.shape[0], target_idx-from_idx-1, root_p.shape[2]))
+        noise_root_p = np.ones((root_p.shape[0], target_idx-from_idx-1, root_p.shape[2])) * infill_value
         root_p[:,from_idx+1:from_idx+1+fixed,:] = noise_root_p[:,:fixed,:]
         root_p[:,from_idx+1+fixed+1:target_idx,:] = noise_root_p[:,fixed+1:,:]
 
-        noise_local_q = np.zeros((local_q.shape[0], target_idx-from_idx-1, local_q.shape[2], local_q.shape[3]))
+        noise_local_q = np.ones((local_q.shape[0], target_idx-from_idx-1, local_q.shape[2], local_q.shape[3])) * infill_value
         local_q[:,from_idx+1:from_idx+1+fixed,:] = noise_local_q[:,:fixed,:,:]
         local_q[:,from_idx+1+fixed+1:target_idx,:] = noise_local_q[:,fixed+1:,:,:]
 
