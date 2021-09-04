@@ -2,17 +2,26 @@ import torch
 import numpy as np
 
 
-def replace_noise(data, from_idx=9, target_idx=40):
+def replace_noise(data, from_idx=9, target_idx=40, fixed=None):
 
-    # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
     root_p = data['root_p'].copy()
     local_q = data['local_q'].copy()
 
-    noise_root_p = np.random.normal(size=(root_p.shape[0], target_idx-from_idx-1, root_p.shape[2]))
-    root_p[:,from_idx+1:target_idx,:] = noise_root_p # Replace with noise from [from_idx, target_idx)
+    if not fixed:
+        # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
+        noise_root_p = np.random.normal(size=(root_p.shape[0], target_idx-from_idx-1, root_p.shape[2]))
+        root_p[:,from_idx+1:target_idx,:] = noise_root_p # Replace with noise from [from_idx, target_idx)
 
-    noise_local_q = np.random.normal(size=(local_q.shape[0], target_idx-from_idx-1, local_q.shape[2], local_q.shape[3]))
-    local_q[:,from_idx+1:target_idx,:] = noise_local_q
+        noise_local_q = np.random.normal(size=(local_q.shape[0], target_idx-from_idx-1, local_q.shape[2], local_q.shape[3]))
+        local_q[:,from_idx+1:target_idx,:] = noise_local_q
+    else:
+        noise_root_p = np.random.normal(size=(root_p.shape[0], target_idx-from_idx-1, root_p.shape[2]))
+        root_p[:,from_idx+1:from_idx+1+fixed,:] = noise_root_p[:,:fixed,:]
+        root_p[:,from_idx+1+fixed+1:target_idx,:] = noise_root_p[:,fixed+1:,:]
+
+        noise_local_q = np.random.normal(size=(local_q.shape[0], target_idx-from_idx-1, local_q.shape[2], local_q.shape[3]))
+        local_q[:,from_idx+1:from_idx+1+fixed,:] = noise_local_q[:,:fixed,:,:]
+        local_q[:,from_idx+1+fixed+1:target_idx,:] = noise_local_q[:,fixed+1:,:,:]
 
     return root_p, local_q
 
