@@ -19,7 +19,7 @@ from tqdm import tqdm
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import replace_noise, vectorize_pose
+from rmi.model.preprocess import replace_noise, vectorize_pose, replace_infill
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
 from utils.general import increment_path
@@ -61,9 +61,12 @@ def train(opt, device):
     # Replace to noise for inbetweening frames
     from_idx, target_idx = opt.from_idx, opt.target_idx  # default: 9-40, max: 48
     horizon = target_idx - from_idx + 1
+    infilling_code = np.zeros((1, horizon))
+    infilling_code[0, 1:-1] = 1
+    infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
     print(f"Horizon: {horizon}")
 
-    root_noised, local_q_noised = replace_noise(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
+    root_noised, local_q_noised = replace_infill(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx)
     contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
     pose_vec_gt, padding_dim = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)
@@ -114,7 +117,7 @@ def train(opt, device):
             src_mask = src_mask.to(device)
             
             with amp.autocast(enabled=cuda):
-                output = transformer_encoder(pose_vectorized_noised, src_mask, seq_label)
+                output = transformer_encoder(pose_vectorized_noised, src_mask, seq_label, infilling_code)
 
                 root_pred = output[:,:,:root_v_dim].permute(1,0,2)
                 quat_pred = output[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)

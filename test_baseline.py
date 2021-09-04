@@ -107,7 +107,6 @@ def test(opt, device):
         img_aggr_list = []
         for t in range(horizon):
             
-            # TODO: final frame does not match
             input_img_path = os.path.join(save_path, 'input')
             plot_pose(start_pose, pos_noised[i,t].detach().numpy(), target_pose, t, skeleton_mocap, save_dir=input_img_path, prefix='input')
             pred_img_path = os.path.join(save_path, 'pred_img')

@@ -8,11 +8,16 @@ class PositionalEmbedding(nn.Module):
         super().__init__()
         self.pos_emb = nn.Embedding(seq_len + 1, d_model)
         self.cond_emb = nn.Embedding(seq_len + 1, d_model)
+        self.infill_emb = nn.Embedding(seq_len + 1, d_model)
 
-    def forward(self, inputs, cond_code):
+    def forward(self, inputs, cond_code, infilling_code):
         positions = torch.arange(inputs.size(0), device=inputs.device).expand(inputs.size(1), inputs.size(0)).contiguous() + 1
         conditions = cond_code.expand(inputs.size(1), inputs.size(0)).contiguous()
-        outputs = inputs + self.pos_emb(positions).permute(1,0,2) + self.cond_emb(conditions).permute(1,0,2)
+        infillings = infilling_code.expand(inputs.size(1), infilling_code.shape[1])
+
+        outputs = inputs + self.pos_emb(positions).permute(1,0,2) + \
+                           self.cond_emb(conditions).permute(1,0,2) + \
+                           self.infill_emb(infillings).permute(1,0,2)
         return outputs
 
 class PositionalEncoding(nn.Module):
