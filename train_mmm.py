@@ -20,7 +20,7 @@ from tqdm import tqdm
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import replace_noise, vectorize_pose, replace_given_range
+from rmi.model.preprocess import vectorize_pose, replace_inpainting_range
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
 from utils.general import increment_path
@@ -116,28 +116,29 @@ def train(opt, device):
             feature_dims = pose_vectorized_input.size(2)
 
             ## REPLACE INPUT INBETWEEN Frames
-            num_masks = np.random.choice([1])
+            num_clue = np.random.choice([0, 1, 3, 5])
 
-            valid_upper = horizon - num_masks
+            valid_upper = horizon - num_clue
             valid_lower = 1
             mask_start_frame = np.random.randint(valid_lower, valid_upper)
 
-            pose_vectorized_noised = replace_given_range(pose_vectorized_input, mask_start_frame, num_masks, cur_batch_size, feature_dims, infill_value=0.1)
+            pose_vectorized_inpainting = replace_inpainting_range(pose_vectorized_input, mask_start_frame, num_clue, cur_batch_size, feature_dims, infill_value=0.1)
    
             ## MAKE INFILLING CODE HERE ##
             infilling_code = np.zeros((1, horizon))
-            infilling_code[0, mask_start_frame:mask_start_frame + num_masks] = 1 # Check right edge
+            infilling_code[0, 1:mask_start_frame] = 1
+            infilling_code[0, mask_start_frame+num_clue:-1] = 1
             infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
             ##############################
 
             pose_vectorized_gt = pose_vectorized_gt.permute(1,0,2)
-            pose_vectorized_noised = pose_vectorized_noised.permute(1,0,2)
+            pose_vectorized_inpainting = pose_vectorized_inpainting.permute(1,0,2)
 
             src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
             src_mask = src_mask.to(device)
             
             with amp.autocast(enabled=cuda):
-                output = transformer_encoder(pose_vectorized_noised, src_mask, seq_label, infilling_code)
+                output = transformer_encoder(pose_vectorized_inpainting, src_mask, seq_label, infilling_code)
 
                 root_pred = output[:,:,:root_v_dim].permute(1,0,2)
                 quat_pred = output[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
@@ -226,7 +227,7 @@ def parse_opt():
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--device', default='3', help='cuda device, i.e. 0 or -1 or cpu')
+    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=50, help='Log model after every "save_period" epoch')
