@@ -92,7 +92,7 @@ def train(opt, device):
 
     l1_loss = nn.L1Loss()
     optim = Adam(params=transformer_encoder.parameters(), lr=opt.learning_rate, betas=(opt.optim_beta1, opt.optim_beta2))
-    scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=200, gamma=0.75)
+    scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=400, gamma=0.8)
 
     scaler = amp.GradScaler(enabled=cuda)
 
@@ -116,7 +116,7 @@ def train(opt, device):
             feature_dims = pose_vectorized_input.size(2)
 
             ## REPLACE INPUT INBETWEEN Frames
-            num_clue = np.random.choice([0, 1, 3, 5])
+            num_clue = np.random.choice([0, 1])
 
             valid_upper = horizon - num_clue
             valid_lower = 1
