@@ -26,7 +26,13 @@ def replace_noise(data, from_idx=9, target_idx=40, fixed=None):
     return root_p, local_q
 
 
-def replace_infill(data, from_idx=9, target_idx=40, fixed=None, infill_value=1.0):
+def replace_given_range(pose_vectorized_input, mask_start_frame, num_masks, batch_size, feature_dims, infill_value=0.1):
+    pose_vectorized_input[:,mask_start_frame:mask_start_frame+num_masks,:] = torch.ones((batch_size, num_masks, feature_dims)) * infill_value
+    return pose_vectorized_input
+
+
+
+def replace_infill(data, from_idx=9, target_idx=40, fixed=None, infill_value=0.1):
 
     root_p = data['root_p'].copy()
     local_q = data['local_q'].copy()

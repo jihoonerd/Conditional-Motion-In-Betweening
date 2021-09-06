@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import random
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +20,7 @@ from tqdm import tqdm
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import replace_noise, vectorize_pose, replace_infill
+from rmi.model.preprocess import replace_noise, vectorize_pose, replace_given_range
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
 from utils.general import increment_path
@@ -61,19 +62,12 @@ def train(opt, device):
     # Replace to noise for inbetweening frames
     from_idx, target_idx = opt.from_idx, opt.target_idx  # default: 9-40, max: 48
     horizon = target_idx - from_idx + 1
-    infilling_code = np.zeros((1, horizon))
-    infilling_code[0, 1:-1] = 1
-    infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
     print(f"Horizon: {horizon}")
 
-    root_noised, local_q_noised = replace_infill(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx, infill_value=0.1)
-    contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
-
-    pose_vec_gt, padding_dim = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)
+    pose_vec_gt, _ = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)
     pose_vectorized_gt = pose_vec_gt[:,from_idx:target_idx+1,:]
+    pose_vectorized_input = pose_vectorized_gt.clone().detach()
     
-    pose_vec_noised, padding_dim = vectorize_pose(root_noised, local_q_noised, contact_init, 96, device)
-    pose_vectorized_noised = pose_vec_noised[:,from_idx:target_idx+1,:]
     global_pos = torch.Tensor(lafan_dataset.data['global_pos']).to(device)
     global_pos_gt = global_pos[:,from_idx:target_idx+1,:]
 
@@ -84,7 +78,7 @@ def train(opt, device):
     seq_labels = torch.Tensor(le_np).type(torch.int64).unsqueeze(1).to(device)
     np.save(f'{save_dir}/le_classes_.npy', le.classes_)
     
-    tensor_dataset = TensorDataset(pose_vectorized_noised, pose_vectorized_gt, global_pos_gt, seq_labels)
+    tensor_dataset = TensorDataset(pose_vectorized_input, pose_vectorized_gt, global_pos_gt, seq_labels)
     lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
 
     # Extract dimension from processed data
@@ -107,12 +101,38 @@ def train(opt, device):
 
         pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
 
-        for pose_vectorized_noised, pose_vectorized_gt, global_pos_gt, seq_label in pbar:
+        root_loss_list = []
+        quat_loss_list = []
+        contact_loss_list = []
+        global_pos_loss_list = []
+        lock_in_loss_list = []
+        total_loss_list = []
+
+        for pose_vectorized_input, pose_vectorized_gt, global_pos_gt, seq_label in pbar:
+            # N, L, D
+            # L = starting frame + inbetweening frame + target frame = horizon
+            cur_batch_size = pose_vectorized_gt.size(0)
+            seq_len = pose_vectorized_gt.size(1)
+            feature_dims = pose_vectorized_input.size(2)
+
+            ## REPLACE INPUT INBETWEEN Frames
+            num_masks = np.random.choice([1])
+
+            valid_upper = horizon - num_masks
+            valid_lower = 1
+            mask_start_frame = np.random.randint(valid_lower, valid_upper)
+
+            pose_vectorized_noised = replace_given_range(pose_vectorized_input, mask_start_frame, num_masks, cur_batch_size, feature_dims, infill_value=0.1)
+   
+            ## MAKE INFILLING CODE HERE ##
+            infilling_code = np.zeros((1, horizon))
+            infilling_code[0, mask_start_frame:mask_start_frame + num_masks] = 1 # Check right edge
+            infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
+            ##############################
 
             pose_vectorized_gt = pose_vectorized_gt.permute(1,0,2)
             pose_vectorized_noised = pose_vectorized_noised.permute(1,0,2)
 
-            seq_len = pose_vectorized_noised.shape[0]
             src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
             src_mask = src_mask.to(device)
             
@@ -125,20 +145,35 @@ def train(opt, device):
                 quat_pred_ = quat_pred_ / torch.norm(quat_pred_, dim = -1, keepdim = True)
                 global_pos_pred = skeleton_mocap.forward_kinematics(quat_pred_, root_pred)
                 contact_pred = torch.sigmoid(output[:,:,root_v_dim + local_q_dim:root_v_dim+local_q_dim+contact_dim]).permute(1,0,2)
+                start_lock_in_pred = global_pos_pred[:, :5]
+                end_lock_in_pred = global_pos_pred[:, -5:]
 
                 root_gt = pose_vectorized_gt[:,:,:root_v_dim].permute(1,0,2)
                 quat_gt = pose_vectorized_gt[:,:,root_v_dim: root_v_dim + local_q_dim].permute(1,0,2)
                 contact_gt = pose_vectorized_gt[:,:,root_v_dim + local_q_dim: root_v_dim + local_q_dim + contact_dim].permute(1,0,2)
+                start_lock_in_gt = global_pos_gt[:, :5]
+                end_lock_in_gt = global_pos_gt[:, -5:]
 
                 root_loss = l1_loss(root_pred, root_gt)
                 quat_loss = l1_loss(quat_pred, quat_gt)
                 contact_loss = l1_loss(contact_pred, contact_gt)
                 global_pos_loss = l1_loss(global_pos_pred, global_pos_gt)
+                lock_in_loss = l1_loss(start_lock_in_pred, start_lock_in_gt) + l1_loss(end_lock_in_pred, end_lock_in_gt)
 
                 total_g_loss = opt.loss_root_weight * root_loss + \
                                opt.loss_quat_weight * quat_loss + \
                                opt.loss_contact_weight * contact_loss + \
-                               opt.loss_global_pos_weight * global_pos_loss
+                               opt.loss_global_pos_weight * global_pos_loss + \
+                               opt.loss_lock_in_weight * lock_in_loss
+
+
+                root_loss_list.append(opt.loss_root_weight * root_loss)
+                quat_loss_list.append(opt.loss_quat_weight * quat_loss)
+                contact_loss_list.append(opt.loss_contact_weight * contact_loss)
+                global_pos_loss_list.append(opt.loss_global_pos_weight * global_pos_loss)
+                lock_in_loss_list.append(opt.loss_lock_in_weight * lock_in_loss)
+                total_loss_list.append(total_g_loss)
+            
 
             optim.zero_grad()
             scaler.scale(total_g_loss).backward()
@@ -148,14 +183,15 @@ def train(opt, device):
             scaler.update()
 
         scheduler.step()
-                                
+
         # Log
         log_dict = {
-            "Train/Loss/Root Loss": opt.loss_root_weight * root_loss, 
-            "Train/Loss/Quaternion Loss": opt.loss_quat_weight * quat_loss,
-            "Train/Loss/Contact Loss": opt.loss_contact_weight * contact_loss,
-            "Train/Loss/Global Position Loss": opt.loss_global_pos_weight * global_pos_loss,
-            "Train/Loss/Total Loss": total_g_loss
+            "Train/Loss/Root Loss": torch.stack(root_loss_list).mean().item(), 
+            "Train/Loss/Quaternion Loss": torch.stack(quat_loss_list).mean().item(),
+            "Train/Loss/Contact Loss": torch.stack(contact_loss_list).mean().item(),
+            "Train/Loss/Global Position Loss": torch.stack(global_pos_loss_list).mean().item(),
+            "Train/Loss/Lock-in Loss": torch.stack(lock_in_loss_list).mean().item(),
+            "Train/Loss/Total Loss": torch.stack(total_loss_list).mean().item(),
         }
 
         for k, v in log_dict.items():
@@ -190,7 +226,7 @@ def parse_opt():
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--device', default='2', help='cuda device, i.e. 0 or -1 or cpu')
+    parser.add_argument('--device', default='3', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=50, help='Log model after every "save_period" epoch')
@@ -201,6 +237,7 @@ def parse_opt():
     parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
     parser.add_argument('--loss_contact_weight', type=float, default=0.2, help='loss_contact_weight')
     parser.add_argument('--loss_global_pos_weight', type=float, default=0.01, help='loss_global_pos_weight')
+    parser.add_argument('--loss_lock_in_weight', type=float, default=0.02, help='loss_lock_in_weight')
     parser.add_argument('--from_idx', type=int, default=9, help='from idx')
     parser.add_argument('--target_idx', type=int, default=40, help='target idx')
     opt = parser.parse_args()
