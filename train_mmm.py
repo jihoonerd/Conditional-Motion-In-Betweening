@@ -7,9 +7,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-import wandb
 import yaml
-from pymo.parsers import BVHParser
 from sklearn.preprocessing import LabelEncoder
 from torch.cuda import amp
 from torch.optim import Adam
@@ -17,10 +15,11 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
+import wandb
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import vectorize_pose, replace_inpainting_range
+from rmi.model.preprocess import replace_inpainting_range, vectorize_pose
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
 from utils.general import increment_path
@@ -116,7 +115,7 @@ def train(opt, device):
             feature_dims = pose_vectorized_input.size(2)
 
             ## REPLACE INPUT INBETWEEN Frames
-            num_clue = np.random.choice([0, 1])
+            num_clue = np.random.choice([1])
 
             valid_upper = horizon - num_clue
             valid_lower = 1
@@ -230,7 +229,7 @@ def parse_opt():
     parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
-    parser.add_argument('--save_interval', type=int, default=50, help='Log model after every "save_period" epoch')
+    parser.add_argument('--save_interval', type=int, default=1, help='Log model after every "save_period" epoch')
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='generator_learning_rate')
     parser.add_argument('--optim_beta1', type=float, default=0.5, help='optim_beta1')
     parser.add_argument('--optim_beta2', type=float, default=0.99, help='optim_beta2')
