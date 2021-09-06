@@ -2,9 +2,9 @@ python train_baseline.py \
 	--processed_data_dir="processed_data_all/" \
 	--batch_size=64 \
 	--epochs=3000 \
-	--device=3 \
+	--device=2 \
 	--entity=rilab-motion \
-	--exp_name="CMIP_BASE_V02(ones,infill_emb,L12,0.02)" \
+	--exp_name="CMIP_BASE_V04(MMM,1-3-5-10)" \
 	--save_interval=200 \
 	--learning_rate=0.0001 \
 	--optim_beta1=0.9 \
@@ -12,6 +12,7 @@ python train_baseline.py \
 	--loss_root_weight=0.01 \
 	--loss_quat_weight=1.0 \
 	--loss_contact_weight=0.2 \
-	--loss_global_pos_weight=0.02 \
+	--loss_global_pos_weight=0.01 \
+	--loss_lock_in_weight=0.02 \
 	--from_idx=9 \
 	--target_idx=40

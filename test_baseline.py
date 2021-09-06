@@ -44,7 +44,7 @@ def test(opt, device):
     infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
     print(f"HORIZON: {horizon}")
 
-    root_noised, local_q_noised = replace_infill(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx, infill_value=1.0)
+    root_noised, local_q_noised = replace_infill(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx, infill_value=0.1)
     contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
 
     pose_vec_gt, padding_dim = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)
@@ -131,7 +131,7 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='CMIP_BASE_V02(ones,infill_emb,L12)', help='experiment name')
+    parser.add_argument('--exp_name', default='CMIP_BASE_V03(0.1fill,infill_embed)', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
