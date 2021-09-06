@@ -4,7 +4,7 @@ python train_mmm.py \
 	--epochs=3000 \
 	--device=3 \
 	--entity=rilab-motion \
-	--exp_name="CMIP_BASE_V04(MMM,1-3-5)" \
+	--exp_name="CMIP_BASE_V05(MMM,01)" \
 	--save_interval=200 \
 	--learning_rate=0.0001 \
 	--optim_beta1=0.9 \
