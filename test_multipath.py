@@ -1,17 +1,20 @@
 import argparse
 import os
 from pathlib import Path
+
+import imageio
 import numpy as np
 import torch
-from rmi.model.skeleton import Skeleton, sk_joints_to_remove, sk_offsets, sk_parents
 from PIL import Image
-import imageio
+from sklearn.preprocessing import LabelEncoder
+
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import vectorize_pose, replace_noise
+from rmi.model.preprocess import replace_noise, vectorize_pose, replace_inpainting_range
+from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
+                                sk_parents)
 from rmi.vis.pose import plot_pose, plot_pose_with_stop
-from sklearn.preprocessing import LabelEncoder
 
 
 def test(opt, device):
@@ -41,24 +44,7 @@ def test(opt, device):
     horizon = ckpt['horizon']
     print(f"HORIZON: {horizon}")
 
-    fixed = 15
-    root_noised, local_q_noised = replace_noise(lafan_dataset.data, from_idx=from_idx, target_idx=target_idx, fixed=fixed)
-    contact_init = torch.ones(lafan_dataset.data['contact'].shape) * 0.5
-
-    ### Modified Position ###
-    root_noised[:,from_idx+1+fixed,:] += np.array([0, 0, 30])
-
-    root_noised_fk = torch.Tensor(root_noised)
-    quat_noised_fk = torch.Tensor(local_q_noised)
-    quat_noised_fk_ = quat_noised_fk / torch.norm(quat_noised_fk, dim = -1, keepdim = True)
-    pos_noised_pred = skeleton_mocap.forward_kinematics(quat_noised_fk_, root_noised_fk)
-    #########################
-
-    pose_vec_gt, _ = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)
-    pose_vectorized_gt = pose_vec_gt[:,from_idx:target_idx+1,:]
-
-    pose_vec_noised, _ = vectorize_pose(root_noised, local_q_noised, contact_init, 96, device)
-    pose_vectorized_noised = pose_vec_noised[:,from_idx:target_idx+1,:]
+    test_idx = [500]
 
     # Extract dimension from processed data
     root_v_dim = lafan_dataset.root_v_dim
@@ -66,8 +52,31 @@ def test(opt, device):
     contact_dim = lafan_dataset.contact_dim
     repr_dim = root_v_dim + local_q_dim + contact_dim
 
+    pose_vec_gt, _ = vectorize_pose(lafan_dataset.data['root_p'], lafan_dataset.data['local_q'], lafan_dataset.data['contact'], 96, device)
+    pose_vectorized_gt = pose_vec_gt[:,from_idx:target_idx+1,:]
+    pose_vectorized_input = pose_vectorized_gt.clone().detach()
+
+    # Replace testing inputs
+    batch_size = pose_vectorized_input.shape[0]
+    feature_dims = 96
+    fixed = 15
+    num_masks = 1
+    pose_vectorized_input[:,fixed,:root_v_dim] += np.array([0, 0, 0])
+
+    pose_vectorized_inpainting = replace_inpainting_range(pose_vectorized_input, fixed, num_masks, batch_size, feature_dims, infill_value=0.1)
+
+    root_input_fk = pose_vectorized_inpainting[test_idx, fixed, :root_v_dim].unsqueeze(0)
+    quat_input_fk = pose_vectorized_inpainting[test_idx, fixed, root_v_dim:root_v_dim+local_q_dim].unsqueeze(0).reshape(1,1,lafan_dataset.num_joints,4)
+    quat_input_fk_ = quat_input_fk / torch.norm(quat_input_fk, dim = -1, keepdim = True)
+    pos_noised_fk = skeleton_mocap.forward_kinematics(quat_input_fk_, root_input_fk)
+
+    infilling_code = np.zeros((1, horizon))
+    infilling_code[0, 1:fixed] = 1
+    infilling_code[0, fixed+1:-1] = 1
+    infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
+
     pose_vectorized_gt = pose_vectorized_gt.permute(1,0,2)
-    pose_vectorized_noised = pose_vectorized_noised.permute(1,0,2)
+    pose_vectorized_input = pose_vectorized_inpainting.permute(1,0,2)
 
     src_mask = torch.zeros((horizon, horizon), device=device).type(torch.bool)
     src_mask = src_mask.to(device)
@@ -82,13 +91,11 @@ def test(opt, device):
     conditioning_labels = np.expand_dims((np.repeat(seq_id[0], repeats=len(seq_categories))), axis=1)
     conditioning_labels = torch.Tensor(conditioning_labels).type(torch.int64).to(device)
 
-    test_idx = [500]
-
     model = TransformerModel(seq_len=ckpt['horizon'], d_model=ckpt['d_model'], nhead=ckpt['nhead'], d_hid=ckpt['d_hid'], nlayers=ckpt['nlayers'], dropout=0.05, out_dim=repr_dim)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
-    output = model(pose_vectorized_noised, src_mask, conditioning_labels)
+    output = model(pose_vectorized_input, src_mask, conditioning_labels, infilling_code)
 
     root_pred = output[:,test_idx,:root_v_dim].permute(1,0,2)
     quat_pred = output[:,test_idx,root_v_dim:root_v_dim+local_q_dim].permute(1,0,2)
@@ -99,13 +106,6 @@ def test(opt, device):
     pos_pred = skeleton_mocap.forward_kinematics(quat_fk_, root_fk)
 
 
-    quat_noised_ = torch.Tensor(local_q_noised[test_idx, from_idx:target_idx+1])
-    quat_noised_ = quat_noised_ / torch.norm(quat_noised_, dim = -1, keepdim = True)
-    pos_noised = skeleton_mocap.forward_kinematics( 
-                                            quat_noised_,
-                                            torch.Tensor(root_noised[test_idx,from_idx:target_idx+1,:]) 
-                                            )
-
     # Compare Input data, Prediction, GT
     for i in range(len(test_idx)):
         save_path = os.path.join(opt.save_path, 'test_' + f'{test_idx[i]}')
@@ -113,24 +113,21 @@ def test(opt, device):
 
         start_pose =  lafan_dataset.data['global_pos'][test_idx[i], from_idx]
         target_pose = lafan_dataset.data['global_pos'][test_idx[i], target_idx]
-        pred_stopover = pos_noised_pred[test_idx[i], from_idx + 1 + fixed]
-        gt_stopover_pose = lafan_dataset.data['global_pos'][test_idx[i], from_idx + 1 + fixed]
+        pred_stopover = pos_noised_fk.squeeze()
+        gt_stopover_pose = lafan_dataset.data['global_pos'][test_idx[i], from_idx + fixed]
 
         img_aggr_list = []
         for t in range(horizon):
             
-            input_img_path = os.path.join(save_path, 'input')
-            plot_pose(start_pose, pos_noised[i,t].detach().numpy(), target_pose, t, skeleton_mocap, save_dir=input_img_path, prefix='input')
             pred_img_path = os.path.join(save_path, 'pred_img')
             plot_pose_with_stop(start_pose, pos_pred[i,t].detach().numpy(), target_pose, pred_stopover, t, skeleton_mocap, save_dir=pred_img_path, prefix='pred')
             gt_img_path = os.path.join(save_path, 'gt_img')
             plot_pose_with_stop(start_pose, lafan_dataset.data['global_pos'][test_idx[i], t+from_idx], target_pose, gt_stopover_pose, t, skeleton_mocap, save_dir=gt_img_path, prefix='gt')
 
-            input_img = Image.open(os.path.join(input_img_path, 'input'+str(t)+'.png'), 'r')
             pred_img = Image.open(os.path.join(pred_img_path, 'pred'+str(t)+'.png'), 'r')
             gt_img = Image.open(os.path.join(gt_img_path, 'gt'+str(t)+'.png'), 'r')
             
-            img_aggr_list.append(np.concatenate([input_img, pred_img, gt_img.resize(pred_img.size)], 1))
+            img_aggr_list.append(np.concatenate([pred_img, gt_img.resize(pred_img.size)], 1))
 
         # Save images
         gif_path = os.path.join(save_path, f'img_{test_idx[i]}.gif')
@@ -140,12 +137,12 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='CMIP_BASE_V01(Layer12)', help='experiment name')
+    parser.add_argument('--exp_name', default='CMIP_BASE_V05(MMM,01)', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
-    parser.add_argument('--motion_type', type=str, default='walk', help='motion type')
+    parser.add_argument('--motion_type', type=str, default='jumps', help='motion type')
     opt = parser.parse_args()
     return opt
 

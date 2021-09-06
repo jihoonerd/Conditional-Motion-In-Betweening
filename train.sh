@@ -2,9 +2,9 @@ python train_mmm.py \
 	--processed_data_dir="processed_data_all/" \
 	--batch_size=64 \
 	--epochs=3000 \
-	--device=3 \
+	--device=2 \
 	--entity=rilab-motion \
-	--exp_name="CMIP_BASE_V05(MMM,01)" \
+	--exp_name="CMIP_BASE_V05(MMM,1)" \
 	--save_interval=200 \
 	--learning_rate=0.0001 \
 	--optim_beta1=0.9 \
