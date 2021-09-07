@@ -44,7 +44,7 @@ def test(opt, device):
     horizon = ckpt['horizon']
     print(f"HORIZON: {horizon}")
 
-    test_idx = [500]
+    test_idx = [150,300,500,700,800,1000,1200,1600,1610,1620]
 
     # Extract dimension from processed data
     root_v_dim = lafan_dataset.root_v_dim
@@ -61,12 +61,12 @@ def test(opt, device):
     feature_dims = 96
     fixed = 15
     num_masks = 1
-    pose_vectorized_input[:,fixed,:root_v_dim] += np.array([0, 0, 0])
+    pose_vectorized_input[:,fixed,:root_v_dim] += np.array([20, 0, -20])
 
     pose_vectorized_inpainting = replace_inpainting_range(pose_vectorized_input, fixed, num_masks, batch_size, feature_dims, infill_value=0.1)
 
-    root_input_fk = pose_vectorized_inpainting[test_idx, fixed, :root_v_dim].unsqueeze(0)
-    quat_input_fk = pose_vectorized_inpainting[test_idx, fixed, root_v_dim:root_v_dim+local_q_dim].unsqueeze(0).reshape(1,1,lafan_dataset.num_joints,4)
+    root_input_fk = pose_vectorized_inpainting[test_idx, fixed, :root_v_dim].unsqueeze(1)
+    quat_input_fk = pose_vectorized_inpainting[test_idx, fixed, root_v_dim:root_v_dim+local_q_dim].unsqueeze(1).reshape(len(test_idx),1,lafan_dataset.num_joints,4)
     quat_input_fk_ = quat_input_fk / torch.norm(quat_input_fk, dim = -1, keepdim = True)
     pos_noised_fk = skeleton_mocap.forward_kinematics(quat_input_fk_, root_input_fk)
 
@@ -113,7 +113,7 @@ def test(opt, device):
 
         start_pose =  lafan_dataset.data['global_pos'][test_idx[i], from_idx]
         target_pose = lafan_dataset.data['global_pos'][test_idx[i], target_idx]
-        pred_stopover = pos_noised_fk.squeeze()
+        pred_stopover = pos_noised_fk[i, 0]
         gt_stopover_pose = lafan_dataset.data['global_pos'][test_idx[i], from_idx + fixed]
 
         img_aggr_list = []
@@ -142,7 +142,7 @@ def parse_opt():
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
-    parser.add_argument('--motion_type', type=str, default='jumps', help='motion type')
+    parser.add_argument('--motion_type', type=str, default='walk', help='motion type')
     opt = parser.parse_args()
     return opt
 
