@@ -61,7 +61,7 @@ def test(opt, device):
     feature_dims = 96
     fixed = 15
     num_masks = 1
-    pose_vectorized_input[:,fixed,:root_v_dim] += np.array([20, 0, -20])
+    pose_vectorized_input[:,fixed,:root_v_dim] += np.array([0, 0, 50])
 
     pose_vectorized_inpainting = replace_inpainting_range(pose_vectorized_input, fixed, num_masks, batch_size, feature_dims, infill_value=0.1)
 
@@ -91,7 +91,7 @@ def test(opt, device):
     conditioning_labels = np.expand_dims((np.repeat(seq_id[0], repeats=len(seq_categories))), axis=1)
     conditioning_labels = torch.Tensor(conditioning_labels).type(torch.int64).to(device)
 
-    model = TransformerModel(seq_len=ckpt['horizon'], d_model=ckpt['d_model'], nhead=ckpt['nhead'], d_hid=ckpt['d_hid'], nlayers=ckpt['nlayers'], dropout=0.05, out_dim=repr_dim)
+    model = TransformerModel(seq_len=ckpt['horizon'], d_model=ckpt['d_model'], nhead=ckpt['nhead'], d_hid=ckpt['d_hid'], nlayers=ckpt['nlayers'], dropout=0.0, out_dim=repr_dim)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
@@ -137,7 +137,7 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='CMIP_BASE_V05(MMM,01)', help='experiment name')
+    parser.add_argument('--exp_name', default='CMIP_BASE_V06(wCLUE_LOSS)', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_all/', help='path to save pickled processed data')

@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os
-import random
 from pathlib import Path
 
 import numpy as np
@@ -86,7 +85,7 @@ def train(opt, device):
     contact_dim = lafan_dataset.contact_dim
     repr_dim = root_v_dim + local_q_dim + contact_dim
 
-    transformer_encoder = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=2048, nlayers=12, dropout=0.05, out_dim=repr_dim)
+    transformer_encoder = TransformerModel(seq_len=horizon, d_model=96, nhead=8, d_hid=2048, nlayers=12, dropout=0.0, out_dim=repr_dim)
     transformer_encoder.to(device)
 
     l1_loss = nn.L1Loss()
@@ -104,7 +103,6 @@ def train(opt, device):
         quat_loss_list = []
         contact_loss_list = []
         global_pos_loss_list = []
-        lock_in_loss_list = []
         total_loss_list = []
 
         for pose_vectorized_input, pose_vectorized_gt, global_pos_gt, seq_label in pbar:
@@ -147,37 +145,25 @@ def train(opt, device):
                     quat_pred_ = quat_pred_ / torch.norm(quat_pred_, dim = -1, keepdim = True)
                     global_pos_pred = skeleton_mocap.forward_kinematics(quat_pred_, root_pred)
                     contact_pred = torch.sigmoid(output[:,:,root_v_dim + local_q_dim:root_v_dim+local_q_dim+contact_dim]).permute(1,0,2)
-                    start_lock_in_pred = global_pos_pred[:, 0]
-                    clue_pred = global_pos_pred[:, mask_start_frame]
-                    end_lock_in_pred = global_pos_pred[:, -1]
 
                     root_gt = pose_vectorized_gt[:,:,:root_v_dim].permute(1,0,2)
                     quat_gt = pose_vectorized_gt[:,:,root_v_dim: root_v_dim + local_q_dim].permute(1,0,2)
                     contact_gt = pose_vectorized_gt[:,:,root_v_dim + local_q_dim: root_v_dim + local_q_dim + contact_dim].permute(1,0,2)
-                    start_lock_in_gt = global_pos_gt[:, 0]
-                    clue_gt = global_pos_gt[:, mask_start_frame]
-                    end_lock_in_gt = global_pos_gt[:, -1]
 
                     root_loss = l1_loss(root_pred, root_gt)
                     quat_loss = l1_loss(quat_pred, quat_gt)
                     contact_loss = l1_loss(contact_pred, contact_gt)
                     global_pos_loss = l1_loss(global_pos_pred, global_pos_gt)
 
-                    lock_in_loss = l1_loss(clue_pred, clue_gt) + \
-                                l1_loss(start_lock_in_pred, start_lock_in_gt) + \
-                                l1_loss(end_lock_in_pred, end_lock_in_gt)
-
                     total_g_loss = opt.loss_root_weight * root_loss + \
                                 opt.loss_quat_weight * quat_loss + \
                                 opt.loss_contact_weight * contact_loss + \
-                                opt.loss_global_pos_weight * global_pos_loss + \
-                                opt.loss_lock_in_weight * lock_in_loss
+                                opt.loss_global_pos_weight * global_pos_loss
 
                     root_loss_list.append(opt.loss_root_weight * root_loss)
                     quat_loss_list.append(opt.loss_quat_weight * quat_loss)
                     contact_loss_list.append(opt.loss_contact_weight * contact_loss)
                     global_pos_loss_list.append(opt.loss_global_pos_weight * global_pos_loss)
-                    lock_in_loss_list.append(opt.loss_lock_in_weight * lock_in_loss)
                     total_loss_list.append(total_g_loss)
             
                 optim.zero_grad()
@@ -195,7 +181,6 @@ def train(opt, device):
             "Train/Loss/Quaternion Loss": torch.stack(quat_loss_list).mean().item(),
             "Train/Loss/Contact Loss": torch.stack(contact_loss_list).mean().item(),
             "Train/Loss/Global Position Loss": torch.stack(global_pos_loss_list).mean().item(),
-            "Train/Loss/Lock-in Loss": torch.stack(lock_in_loss_list).mean().item(),
             "Train/Loss/Total Loss": torch.stack(total_loss_list).mean().item(),
         }
 
@@ -241,8 +226,7 @@ def parse_opt():
     parser.add_argument('--loss_root_weight', type=float, default=0.01, help='loss_pos_weight')
     parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
     parser.add_argument('--loss_contact_weight', type=float, default=0.2, help='loss_contact_weight')
-    parser.add_argument('--loss_global_pos_weight', type=float, default=0.01, help='loss_global_pos_weight')
-    parser.add_argument('--loss_lock_in_weight', type=float, default=0.03, help='loss_lock_in_weight')
+    parser.add_argument('--loss_global_pos_weight', type=float, default=0.05, help='loss_global_pos_weight')
     parser.add_argument('--from_idx', type=int, default=9, help='from idx')
     parser.add_argument('--target_idx', type=int, default=40, help='target idx')
     opt = parser.parse_args()
