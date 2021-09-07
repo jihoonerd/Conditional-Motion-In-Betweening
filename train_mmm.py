@@ -116,71 +116,76 @@ def train(opt, device):
 
             ## REPLACE INPUT INBETWEEN Frames
             num_clue = np.random.choice([1])
-
             valid_upper = horizon - num_clue
             valid_lower = 1
-            mask_start_frame = np.random.randint(valid_lower, valid_upper)
-
-            pose_vectorized_inpainting = replace_inpainting_range(pose_vectorized_input, mask_start_frame, num_clue, cur_batch_size, feature_dims, infill_value=0.1)
-   
-            ## MAKE INFILLING CODE HERE ##
-            infilling_code = np.zeros((1, horizon))
-            infilling_code[0, 1:mask_start_frame] = 1
-            infilling_code[0, mask_start_frame+num_clue:-1] = 1
-            infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
-            ##############################
 
             pose_vectorized_gt = pose_vectorized_gt.permute(1,0,2)
-            pose_vectorized_inpainting = pose_vectorized_inpainting.permute(1,0,2)
 
-            src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
-            src_mask = src_mask.to(device)
+            for _ in range(3):
+                mask_start_frame = np.random.randint(valid_lower, valid_upper)
+
+                pose_vectorized_inpainting = replace_inpainting_range(pose_vectorized_input, mask_start_frame, num_clue, cur_batch_size, feature_dims, infill_value=0.1)
+    
+                ## MAKE INFILLING CODE HERE ##
+                infilling_code = np.zeros((1, horizon))
+                infilling_code[0, 1:mask_start_frame] = 1
+                infilling_code[0, mask_start_frame+num_clue:-1] = 1
+                infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
+                ##############################
+
+                pose_vectorized_inpainting = pose_vectorized_inpainting.permute(1,0,2)
+
+                src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
+                src_mask = src_mask.to(device)
+                
+                with amp.autocast(enabled=cuda):
+                    output = transformer_encoder(pose_vectorized_inpainting, src_mask, seq_label, infilling_code)
+
+                    root_pred = output[:,:,:root_v_dim].permute(1,0,2)
+                    quat_pred = output[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
+                    quat_pred_ = quat_pred.view(quat_pred.shape[0], quat_pred.shape[1], lafan_dataset.num_joints, 4)
+                    quat_pred_ = quat_pred_ / torch.norm(quat_pred_, dim = -1, keepdim = True)
+                    global_pos_pred = skeleton_mocap.forward_kinematics(quat_pred_, root_pred)
+                    contact_pred = torch.sigmoid(output[:,:,root_v_dim + local_q_dim:root_v_dim+local_q_dim+contact_dim]).permute(1,0,2)
+                    start_lock_in_pred = global_pos_pred[:, 0]
+                    clue_pred = global_pos_pred[:, mask_start_frame]
+                    end_lock_in_pred = global_pos_pred[:, -1]
+
+                    root_gt = pose_vectorized_gt[:,:,:root_v_dim].permute(1,0,2)
+                    quat_gt = pose_vectorized_gt[:,:,root_v_dim: root_v_dim + local_q_dim].permute(1,0,2)
+                    contact_gt = pose_vectorized_gt[:,:,root_v_dim + local_q_dim: root_v_dim + local_q_dim + contact_dim].permute(1,0,2)
+                    start_lock_in_gt = global_pos_gt[:, 0]
+                    clue_gt = global_pos_gt[:, mask_start_frame]
+                    end_lock_in_gt = global_pos_gt[:, -1]
+
+                    root_loss = l1_loss(root_pred, root_gt)
+                    quat_loss = l1_loss(quat_pred, quat_gt)
+                    contact_loss = l1_loss(contact_pred, contact_gt)
+                    global_pos_loss = l1_loss(global_pos_pred, global_pos_gt)
+
+                    lock_in_loss = l1_loss(clue_pred, clue_gt) + \
+                                l1_loss(start_lock_in_pred, start_lock_in_gt) + \
+                                l1_loss(end_lock_in_pred, end_lock_in_gt)
+
+                    total_g_loss = opt.loss_root_weight * root_loss + \
+                                opt.loss_quat_weight * quat_loss + \
+                                opt.loss_contact_weight * contact_loss + \
+                                opt.loss_global_pos_weight * global_pos_loss + \
+                                opt.loss_lock_in_weight * lock_in_loss
+
+                    root_loss_list.append(opt.loss_root_weight * root_loss)
+                    quat_loss_list.append(opt.loss_quat_weight * quat_loss)
+                    contact_loss_list.append(opt.loss_contact_weight * contact_loss)
+                    global_pos_loss_list.append(opt.loss_global_pos_weight * global_pos_loss)
+                    lock_in_loss_list.append(opt.loss_lock_in_weight * lock_in_loss)
+                    total_loss_list.append(total_g_loss)
             
-            with amp.autocast(enabled=cuda):
-                output = transformer_encoder(pose_vectorized_inpainting, src_mask, seq_label, infilling_code)
-
-                root_pred = output[:,:,:root_v_dim].permute(1,0,2)
-                quat_pred = output[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
-                quat_pred_ = quat_pred.view(quat_pred.shape[0], quat_pred.shape[1], lafan_dataset.num_joints, 4)
-                quat_pred_ = quat_pred_ / torch.norm(quat_pred_, dim = -1, keepdim = True)
-                global_pos_pred = skeleton_mocap.forward_kinematics(quat_pred_, root_pred)
-                contact_pred = torch.sigmoid(output[:,:,root_v_dim + local_q_dim:root_v_dim+local_q_dim+contact_dim]).permute(1,0,2)
-                start_lock_in_pred = global_pos_pred[:, :5]
-                end_lock_in_pred = global_pos_pred[:, -5:]
-
-                root_gt = pose_vectorized_gt[:,:,:root_v_dim].permute(1,0,2)
-                quat_gt = pose_vectorized_gt[:,:,root_v_dim: root_v_dim + local_q_dim].permute(1,0,2)
-                contact_gt = pose_vectorized_gt[:,:,root_v_dim + local_q_dim: root_v_dim + local_q_dim + contact_dim].permute(1,0,2)
-                start_lock_in_gt = global_pos_gt[:, :5]
-                end_lock_in_gt = global_pos_gt[:, -5:]
-
-                root_loss = l1_loss(root_pred, root_gt)
-                quat_loss = l1_loss(quat_pred, quat_gt)
-                contact_loss = l1_loss(contact_pred, contact_gt)
-                global_pos_loss = l1_loss(global_pos_pred, global_pos_gt)
-                lock_in_loss = l1_loss(start_lock_in_pred, start_lock_in_gt) + l1_loss(end_lock_in_pred, end_lock_in_gt)
-
-                total_g_loss = opt.loss_root_weight * root_loss + \
-                               opt.loss_quat_weight * quat_loss + \
-                               opt.loss_contact_weight * contact_loss + \
-                               opt.loss_global_pos_weight * global_pos_loss + \
-                               opt.loss_lock_in_weight * lock_in_loss
-
-
-                root_loss_list.append(opt.loss_root_weight * root_loss)
-                quat_loss_list.append(opt.loss_quat_weight * quat_loss)
-                contact_loss_list.append(opt.loss_contact_weight * contact_loss)
-                global_pos_loss_list.append(opt.loss_global_pos_weight * global_pos_loss)
-                lock_in_loss_list.append(opt.loss_lock_in_weight * lock_in_loss)
-                total_loss_list.append(total_g_loss)
-            
-
-            optim.zero_grad()
-            scaler.scale(total_g_loss).backward()
-            scaler.unscale_(optim)
-            torch.nn.utils.clip_grad_norm_(transformer_encoder.parameters(), 1.0)
-            scaler.step(optim)
-            scaler.update()
+                optim.zero_grad()
+                scaler.scale(total_g_loss).backward()
+                scaler.unscale_(optim)
+                torch.nn.utils.clip_grad_norm_(transformer_encoder.parameters(), 1.0)
+                scaler.step(optim)
+                scaler.update()
 
         scheduler.step()
 
@@ -237,7 +242,7 @@ def parse_opt():
     parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
     parser.add_argument('--loss_contact_weight', type=float, default=0.2, help='loss_contact_weight')
     parser.add_argument('--loss_global_pos_weight', type=float, default=0.01, help='loss_global_pos_weight')
-    parser.add_argument('--loss_lock_in_weight', type=float, default=0.02, help='loss_lock_in_weight')
+    parser.add_argument('--loss_lock_in_weight', type=float, default=0.03, help='loss_lock_in_weight')
     parser.add_argument('--from_idx', type=int, default=9, help='from idx')
     parser.add_argument('--target_idx', type=int, default=40, help='target idx')
     opt = parser.parse_args()
