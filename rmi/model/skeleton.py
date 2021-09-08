@@ -123,6 +123,39 @@ class Skeleton:
                     rotations_world.append(None)
 
         return torch.stack(positions_world, dim=3).permute(0, 1, 3, 2)
+
+
+    def forward_kinematics_with_rotation(self, rotations, root_positions):
+        """
+        Perform forward kinematics using the given trajectory and local rotations.
+        Arguments (where N = batch size, L = sequence length, J = number of joints):
+         -- rotations: (N, L, J, 4) tensor of unit quaternions describing the local rotations of each joint.
+         -- root_positions: (N, L, 3) tensor describing the root joint positions.
+        """
+        assert len(rotations.shape) == 4
+        assert rotations.shape[-1] == 4
+
+        positions_world = []
+        rotations_world = []
+
+        expanded_offsets = self._offsets.expand(rotations.shape[0], rotations.shape[1],
+                                                   self._offsets.shape[0], self._offsets.shape[1])
+
+        # Parallelize along the batch and time dimensions
+        for i in range(self._offsets.shape[0]):
+            if self._parents[i] == -1:
+                positions_world.append(root_positions)
+                rotations_world.append(rotations[:, :, 0])
+            else:
+                positions_world.append(qrot(rotations_world[self._parents[i]], expanded_offsets[:, :, i]) \
+                                       + positions_world[self._parents[i]])
+                if self._has_children[i]:
+                    rotations_world.append(qmul(rotations_world[self._parents[i]], rotations[:, :, i]))
+                else:
+                    # This joint is a terminal node -> it would be useless to compute the transformation
+                    rotations_world.append(torch.Tensor([1,0,0,0]).expand(rotations.shape[0],rotations.shape[1],4).to(rotations.device))
+        
+        return torch.stack(positions_world, dim=3).permute(0, 1, 3, 2), torch.stack(rotations_world, dim=3).permute(0, 1, 3, 2)
     
     def joints_left(self):
         return self._joints_left
