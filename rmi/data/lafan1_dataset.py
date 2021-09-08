@@ -6,7 +6,7 @@ import pickle
 import os 
 
 class LAFAN1Dataset(Dataset):
-    def __init__(self, lafan_path: str, processed_data_dir : str, train: bool, device: str, target_action: list, start_seq_length: int=5, cur_seq_length: int=5, max_transition_length: int=30, increase_rate: int=3):
+    def __init__(self, lafan_path: str, processed_data_dir : str, train: bool, device: str, target_action: list):
         self.lafan_path = lafan_path
 
         self.train = train
@@ -22,12 +22,6 @@ class LAFAN1Dataset(Dataset):
         # 4.3: Given the larger size of ... we sample our test windows from Subject 5 at every 40 frames.
         # The training statistics for normalization are computed on windows of 50 frames offset by 20 frames.
         self.offset = 20 if self.train else 40
-
-        # 4.3 Table 3: Trained with transition lengths of maximum 30 frames and are evaluated on 5, 15, 30, 45 frames
-        self.start_seq_length = start_seq_length
-        self.cur_seq_length = cur_seq_length
-        self.increase_rate = increase_rate
-        self.max_transition_length = max_transition_length
 
         self.device = device
         

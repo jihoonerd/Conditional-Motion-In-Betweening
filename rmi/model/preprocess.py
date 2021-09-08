@@ -77,6 +77,17 @@ def lerp_pose(data, from_idx=9, target_idx=39):
 
     return root_p, local_q
 
+def vectorize_representation(global_position, global_rotation):
+
+    batch_size = global_position.shape[0]
+    seq_len = global_position.shape[1]
+
+    global_pos_vec = global_position.reshape(batch_size, seq_len, -1).contiguous()
+    global_rot_vec = global_rotation.reshape(batch_size, seq_len, -1).contiguous()
+
+    global_pose_vec_gt = torch.cat([global_pos_vec, global_rot_vec], dim=2)
+    return global_pose_vec_gt
+
 def vectorize_pose(root_p, local_q, contact, vector_dim, device):
     """Reshape root_p and local_q to match with transformer src dimension
     
