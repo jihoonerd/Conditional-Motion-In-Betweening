@@ -33,6 +33,33 @@ def replace_inpainting_range(pose_vectorized_input, mask_start_frame, num_masks,
     return pose_vectorized_input
 
 
+def interpolate_input_repr(minibatch_pose_input, mask_start_frame, num_clue, pos_dim, rot_dim):
+    # Use LERP for positions and SLERP for rotations
+    # TODO: Use LERP for now
+    seq_len = minibatch_pose_input.size(1)
+
+    # minibatch_pose_input (N.L.D)
+    interpolate_start1 = minibatch_pose_input[:,0,:]
+    interpolate_end1 = minibatch_pose_input[:,mask_start_frame,:]
+
+    interpolate_start2 = minibatch_pose_input[:, mask_start_frame, :]
+    interpolate_end2 = minibatch_pose_input[:, -1,:]
+
+    interpolated = torch.zeros_like(minibatch_pose_input, device=minibatch_pose_input.device)
+    for i in range(mask_start_frame+1):
+        dt = 1 / mask_start_frame
+        interpolated[:,i,:] = torch.lerp(interpolate_start1, interpolate_end1, dt * i)
+
+    assert (interpolated[:,0,:] == interpolate_start1).all()
+    assert (interpolated[:,mask_start_frame,:] == interpolate_end1).all()
+    
+    for i in range(mask_start_frame, seq_len):
+        dt = 1 / (seq_len - mask_start_frame - 1)
+        interpolated[:,i,:] = torch.lerp(interpolate_start2, interpolate_end2, dt * (i - mask_start_frame))
+    
+    assert (interpolated[:,mask_start_frame,:] == interpolate_start2).all()
+    assert (interpolated[:,-1,:] == interpolate_end2).all()
+    return interpolated
 
 def replace_infill(data, from_idx=9, target_idx=40, fixed=None, infill_value=0.1):
 

@@ -18,7 +18,7 @@ import wandb
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import replace_inpainting_range, vectorize_pose, vectorize_representation
+from rmi.model.preprocess import replace_inpainting_range, vectorize_pose, vectorize_representation, interpolate_input_repr
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
 from utils.general import increment_path
@@ -70,21 +70,13 @@ def train(opt, device):
     global_pose_vec_gt = vectorize_representation(global_pos, global_q)
     global_pose_vec_input = global_pose_vec_gt.clone().detach()
     
-    # # Not using action condition here
-    # seq_categories = [x[:-1] for x in lafan_dataset.data['seq_names']]
-
-    # le = LabelEncoder()
-    # le_np = le.fit_transform(seq_categories)
-    # seq_labels = torch.Tensor(le_np).type(torch.int64).unsqueeze(1).to(device)
-    # np.save(f'{save_dir}/le_classes_.npy', le.classes_)
-    
     tensor_dataset = TensorDataset(global_pose_vec_input, global_pose_vec_gt)
     lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
 
     # Extract dimension from processed data
-    root_dim = lafan_dataset.num_joints * 3
+    pos_dim = lafan_dataset.num_joints * 3
     rot_dim = lafan_dataset.num_joints * 4
-    repr_dim = root_dim + rot_dim
+    repr_dim = pos_dim + rot_dim
 
     transformer_encoder = TransformerModel(seq_len=horizon, d_model=repr_dim, nhead=7, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim)
     transformer_encoder.to(device)
@@ -100,8 +92,8 @@ def train(opt, device):
 
         pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
 
-        recon_root_loss = []
-        recon_quat_loss = []
+        recon_pos_loss = []
+        recon_rot_loss = []
         total_loss_list = []
 
         for minibatch_pose_input, minibatch_pose_gt in pbar:
@@ -112,17 +104,15 @@ def train(opt, device):
             seq_len = minibatch_pose_input.size(1)
             feature_dims = minibatch_pose_input.size(2)
 
-            ## REPLACE INPUT INBETWEEN Frames
-            num_clue = np.random.choice([1])
+            num_clue = 1
             valid_upper = horizon - num_clue
             valid_lower = 1
 
-            pose_vectorized_gt = pose_vectorized_gt.permute(1,0,2)
 
             for _ in range(3):
                 mask_start_frame = np.random.randint(valid_lower, valid_upper)
 
-                pose_vectorized_inpainting = replace_inpainting_range(pose_vectorized_input, mask_start_frame, num_clue, cur_batch_size, feature_dims, infill_value=0.1)
+                pose_interpolated_input = interpolate_input_repr(minibatch_pose_input, mask_start_frame, num_clue, pos_dim, rot_dim)
     
                 ## MAKE INFILLING CODE HERE ##
                 infilling_code = np.zeros((1, horizon))
@@ -131,39 +121,28 @@ def train(opt, device):
                 infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
                 ##############################
 
-                pose_vectorized_inpainting = pose_vectorized_inpainting.permute(1,0,2)
+                pose_interpolated_input = pose_interpolated_input.permute(1,0,2)
 
                 src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
                 src_mask = src_mask.to(device)
                 
                 with amp.autocast(enabled=cuda):
-                    output = transformer_encoder(pose_vectorized_inpainting, src_mask, seq_label, infilling_code)
+                    output = transformer_encoder(pose_interpolated_input, src_mask, None, infilling_code)
 
-                    root_pred = output[:,:,:root_v_dim].permute(1,0,2)
-                    quat_pred = output[:,:,root_v_dim:root_v_dim + local_q_dim].permute(1,0,2)
-                    quat_pred_ = quat_pred.view(quat_pred.shape[0], quat_pred.shape[1], lafan_dataset.num_joints, 4)
-                    quat_pred_ = quat_pred_ / torch.norm(quat_pred_, dim = -1, keepdim = True)
-                    global_pos_pred = skeleton_mocap.forward_kinematics(quat_pred_, root_pred)
-                    contact_pred = torch.sigmoid(output[:,:,root_v_dim + local_q_dim:root_v_dim+local_q_dim+contact_dim]).permute(1,0,2)
+                    pos_pred = output[:,:,:pos_dim].permute(1,0,2)
+                    rot_pred = output[:,:,pos_dim:].permute(1,0,2)
 
-                    root_gt = pose_vectorized_gt[:,:,:root_v_dim].permute(1,0,2)
-                    quat_gt = pose_vectorized_gt[:,:,root_v_dim: root_v_dim + local_q_dim].permute(1,0,2)
-                    contact_gt = pose_vectorized_gt[:,:,root_v_dim + local_q_dim: root_v_dim + local_q_dim + contact_dim].permute(1,0,2)
+                    pos_gt = minibatch_pose_gt[:,:,:pos_dim]
+                    rot_gt = minibatch_pose_gt[:,:,pos_dim:]
 
-                    root_loss = l1_loss(root_pred, root_gt)
-                    quat_loss = l1_loss(quat_pred, quat_gt)
-                    contact_loss = l1_loss(contact_pred, contact_gt)
-                    global_pos_loss = l1_loss(global_pos_pred, global_pos_gt)
+                    pos_loss = l1_loss(pos_pred, pos_gt)
+                    rot_loss = l1_loss(rot_pred, rot_gt)
 
-                    total_g_loss = opt.loss_root_weight * root_loss + \
-                                opt.loss_quat_weight * quat_loss + \
-                                opt.loss_contact_weight * contact_loss + \
-                                opt.loss_global_pos_weight * global_pos_loss
+                    total_g_loss = opt.loss_pos_weight * pos_loss + \
+                                   opt.loss_rot_weight * rot_loss
 
-                    root_loss_list.append(opt.loss_root_weight * root_loss)
-                    quat_loss_list.append(opt.loss_quat_weight * quat_loss)
-                    contact_loss_list.append(opt.loss_contact_weight * contact_loss)
-                    global_pos_loss_list.append(opt.loss_global_pos_weight * global_pos_loss)
+                    recon_pos_loss.append(opt.loss_pos_weight * pos_loss)
+                    recon_rot_loss.append(opt.loss_rot_weight * rot_loss)
                     total_loss_list.append(total_g_loss)
             
                 optim.zero_grad()
@@ -177,10 +156,8 @@ def train(opt, device):
 
         # Log
         log_dict = {
-            "Train/Loss/Root Loss": torch.stack(root_loss_list).mean().item(), 
-            "Train/Loss/Quaternion Loss": torch.stack(quat_loss_list).mean().item(),
-            "Train/Loss/Contact Loss": torch.stack(contact_loss_list).mean().item(),
-            "Train/Loss/Global Position Loss": torch.stack(global_pos_loss_list).mean().item(),
+            "Train/Loss/Position Loss": torch.stack(recon_pos_loss).mean().item(), 
+            "Train/Loss/Rotatation Loss": torch.stack(recon_rot_loss).mean().item(),
             "Train/Loss/Total Loss": torch.stack(total_loss_list).mean().item(),
         }
 
@@ -223,10 +200,8 @@ def parse_opt():
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='generator_learning_rate')
     parser.add_argument('--optim_beta1', type=float, default=0.5, help='optim_beta1')
     parser.add_argument('--optim_beta2', type=float, default=0.99, help='optim_beta2')
-    parser.add_argument('--loss_root_weight', type=float, default=0.01, help='loss_pos_weight')
-    parser.add_argument('--loss_quat_weight', type=float, default=1.0, help='loss_quat_weight')
-    parser.add_argument('--loss_contact_weight', type=float, default=0.2, help='loss_contact_weight')
-    parser.add_argument('--loss_global_pos_weight', type=float, default=0.05, help='loss_global_pos_weight')
+    parser.add_argument('--loss_pos_weight', type=float, default=0.03, help='loss_pos_weight')
+    parser.add_argument('--loss_rot_weight', type=float, default=1.0, help='loss_rot_weight')
     parser.add_argument('--from_idx', type=int, default=9, help='from idx')
     parser.add_argument('--target_idx', type=int, default=40, help='target idx')
     opt = parser.parse_args()
