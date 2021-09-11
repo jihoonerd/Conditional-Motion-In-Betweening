@@ -38,7 +38,6 @@ def train(opt, device):
     save_interval = opt.save_interval
 
     # Set device to use
-    cuda = device.type != 'cpu'
     epochs = opt.epochs
                           
     # Loggers
@@ -51,7 +50,7 @@ def train(opt, device):
     skeleton_mocap.remove_joints(sk_joints_to_remove)
 
     # Flip, Load and preprocess data. It utilizes LAFAN1 utilities
-    # flip_bvh(opt.data_path) # TODO: Disable flip for now
+    flip_bvh(opt.data_path)
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
@@ -64,13 +63,20 @@ def train(opt, device):
 
     root_pos = torch.Tensor(lafan_dataset.data['root_p'][:, from_idx:target_idx+1]).to(device)
     local_q = torch.Tensor(lafan_dataset.data['local_q'][:, from_idx:target_idx+1]).to(device)
-    local_q_normalized = local_q / torch.norm(local_q, dim = -1, keepdim = True)
+    local_q_normalized = nn.functional.normalize(local_q, p=2.0, dim=-1)
 
     global_pos, global_q = skeleton_mocap.forward_kinematics_with_rotation(local_q_normalized, root_pos)
     global_pose_vec_gt = vectorize_representation(global_pos, global_q)
     global_pose_vec_input = global_pose_vec_gt.clone().detach()
+
+    seq_categories = [x[:-1] for x in lafan_dataset.data['seq_names']]
+
+    le = LabelEncoder()
+    le_np = le.fit_transform(seq_categories)
+    seq_labels = torch.Tensor(le_np).type(torch.int64).unsqueeze(1).to(device)
+    np.save(f'{save_dir}/le_classes_.npy', le.classes_)
     
-    tensor_dataset = TensorDataset(global_pose_vec_input, global_pose_vec_gt)
+    tensor_dataset = TensorDataset(global_pose_vec_input, global_pose_vec_gt, seq_labels)
     lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
 
     # Extract dimension from processed data
@@ -94,7 +100,7 @@ def train(opt, device):
         recon_rot_loss = []
         total_loss_list = []
 
-        for minibatch_pose_input, minibatch_pose_gt in pbar:
+        for minibatch_pose_input, minibatch_pose_gt, seq_label in pbar:
             # N, L, D
             # L = starting frame + inbetweening frame + target frame = horizon
 
@@ -124,7 +130,7 @@ def train(opt, device):
                 src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
                 src_mask = src_mask.to(device)
                 
-                output = transformer_encoder(pose_interpolated_input, src_mask, None, infilling_code)
+                output = transformer_encoder(pose_interpolated_input, src_mask, seq_label, infilling_code)
 
                 pos_pred = output[:,:,:pos_dim].permute(1,0,2)
                 rot_pred = output[:,:,pos_dim:].permute(1,0,2)
@@ -195,7 +201,7 @@ def parse_opt():
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='generator_learning_rate')
     parser.add_argument('--optim_beta1', type=float, default=0.5, help='optim_beta1')
     parser.add_argument('--optim_beta2', type=float, default=0.99, help='optim_beta2')
-    parser.add_argument('--loss_pos_weight', type=float, default=0.03, help='loss_pos_weight')
+    parser.add_argument('--loss_pos_weight', type=float, default=0.02, help='loss_pos_weight')
     parser.add_argument('--loss_rot_weight', type=float, default=1.0, help='loss_rot_weight')
     parser.add_argument('--from_idx', type=int, default=9, help='from idx')
     parser.add_argument('--target_idx', type=int, default=40, help='target idx')
