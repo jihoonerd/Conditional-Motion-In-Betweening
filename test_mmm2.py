@@ -55,7 +55,7 @@ def test(opt, device):
 
     root_pos = torch.Tensor(lafan_dataset.data['root_p'][:, from_idx:target_idx+1]).to(device)
     local_q = torch.Tensor(lafan_dataset.data['local_q'][:, from_idx:target_idx+1]).to(device)
-    local_q_normalized = local_q / torch.norm(local_q, dim = -1, keepdim = True)
+    local_q_normalized = nn.functional.normalize(local_q, p=2.0, dim=-1)
 
     # Replace testing inputs
     fixed = 15

@@ -1,10 +1,10 @@
 python train_mmm2.py \
 	--processed_data_dir="processed_data_original/" \
-	--batch_size=256 \
+	--batch_size=1024 \
 	--epochs=10000 \
 	--device=2 \
 	--entity=rilab-motion \
-	--exp_name="CMIP_GLOBAL_LERP_LOWAUTO" \
+	--exp_name="CMIP_GLOBAL_LERP_wCOND" \
 	--save_interval=100 \
 	--learning_rate=0.0001 \
 	--optim_beta1=0.9 \
