@@ -1,0 +1,15 @@
+python train_mmm2.py \
+	--processed_data_dir="processed_data_original/" \
+	--batch_size=256 \
+	--epochs=10000 \
+	--device=2 \
+	--entity=rilab-motion \
+	--exp_name="CMIP_GLOBAL_LERP_LOWAUTO" \
+	--save_interval=100 \
+	--learning_rate=0.0001 \
+	--optim_beta1=0.9 \
+	--optim_beta2=0.99 \
+	--loss_pos_weight=0.03 \
+	--loss_rot_weight=1.0 \
+	--from_idx=9 \
+	--target_idx=40

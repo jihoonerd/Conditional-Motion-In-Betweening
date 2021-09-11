@@ -41,8 +41,49 @@ def project_root_position(position_arr: np.array, file_name: str):
     plt.savefig(f"{file_name}.png", dpi=200)
 
 
+def plot_single_pose(
+    pose, frame_idx, skeleton, save_dir, prefix,
+):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection="3d")
 
+    parent_idx = skeleton.parents()
 
+    for i, p in enumerate(parent_idx):
+        if i > 0:
+            ax.plot(
+                [pose[i, 0], pose[p, 0]],
+                [pose[i, 2], pose[p, 2]],
+                [pose[i, 1], pose[p, 1]],
+                c="k",
+            )
+
+    x_min = pose[:, 0].min()
+    x_max = pose[:, 0].max()
+
+    y_min = pose[:, 1].min()
+    y_max = pose[:, 1].max()
+
+    z_min = pose[:, 2].min()
+    z_max = pose[:, 2].max()
+
+    ax.set_xlim(x_min, x_max)
+    ax.set_xlabel("$X$ Axis")
+
+    ax.set_ylim(z_min, z_max)
+    ax.set_ylabel("$Y$ Axis")
+
+    ax.set_zlim(y_min, y_max)
+    ax.set_zlabel("$Z$ Axis")
+
+    plt.draw()
+
+    title = f"{prefix}: {frame_idx}"
+    plt.title(title)
+    prefix = prefix
+    pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
+    plt.savefig(os.path.join(save_dir, prefix + str(frame_idx) + ".png"), dpi=60)
+    plt.close()
 
     
 
