@@ -85,8 +85,6 @@ def train(opt, device):
     optim = Adam(params=transformer_encoder.parameters(), lr=opt.learning_rate, betas=(opt.optim_beta1, opt.optim_beta2))
     scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=400, gamma=0.8)
 
-    scaler = amp.GradScaler(enabled=cuda)
-
     LOGGER.info(f'Starting training for {epochs} epochs...')
     for epoch in range(1, epochs + 1):
 
@@ -126,31 +124,28 @@ def train(opt, device):
                 src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
                 src_mask = src_mask.to(device)
                 
-                with amp.autocast(enabled=cuda):
-                    output = transformer_encoder(pose_interpolated_input, src_mask, None, infilling_code)
+                output = transformer_encoder(pose_interpolated_input, src_mask, None, infilling_code)
 
-                    pos_pred = output[:,:,:pos_dim].permute(1,0,2)
-                    rot_pred = output[:,:,pos_dim:].permute(1,0,2)
+                pos_pred = output[:,:,:pos_dim].permute(1,0,2)
+                rot_pred = output[:,:,pos_dim:].permute(1,0,2)
 
-                    pos_gt = minibatch_pose_gt[:,:,:pos_dim]
-                    rot_gt = minibatch_pose_gt[:,:,pos_dim:]
+                pos_gt = minibatch_pose_gt[:,:,:pos_dim]
+                rot_gt = minibatch_pose_gt[:,:,pos_dim:]
 
-                    pos_loss = l1_loss(pos_pred, pos_gt)
-                    rot_loss = l1_loss(rot_pred, rot_gt)
+                pos_loss = l1_loss(pos_pred, pos_gt)
+                rot_loss = l1_loss(rot_pred, rot_gt)
 
-                    total_g_loss = opt.loss_pos_weight * pos_loss + \
-                                   opt.loss_rot_weight * rot_loss
+                total_g_loss = opt.loss_pos_weight * pos_loss + \
+                                opt.loss_rot_weight * rot_loss
 
-                    recon_pos_loss.append(opt.loss_pos_weight * pos_loss)
-                    recon_rot_loss.append(opt.loss_rot_weight * rot_loss)
-                    total_loss_list.append(total_g_loss)
+                recon_pos_loss.append(opt.loss_pos_weight * pos_loss)
+                recon_rot_loss.append(opt.loss_rot_weight * rot_loss)
+                total_loss_list.append(total_g_loss)
             
                 optim.zero_grad()
-                scaler.scale(total_g_loss).backward()
-                scaler.unscale_(optim)
-                torch.nn.utils.clip_grad_norm_(transformer_encoder.parameters(), 1.0)
-                scaler.step(optim)
-                scaler.update()
+                total_g_loss.backward()
+                torch.nn.utils.clip_grad_norm_(transformer_encoder.parameters(), 1.0, error_if_nonfinite=False)
+                optim.step()
 
         scheduler.step()
 
@@ -193,7 +188,7 @@ def parse_opt():
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or -1 or cpu')
+    parser.add_argument('--device', default='2', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=1, help='Log model after every "save_period" epoch')
