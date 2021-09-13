@@ -56,7 +56,7 @@ def test(opt, device):
     local_q_normalized = nn.functional.normalize(local_q, p=2.0, dim=-1)
 
     # Replace testing inputs
-    fixed = 15
+    fixed = 0
     num_clue = 1
 
     global_pos, global_q = skeleton_mocap.forward_kinematics_with_rotation(local_q_normalized, root_pos)
