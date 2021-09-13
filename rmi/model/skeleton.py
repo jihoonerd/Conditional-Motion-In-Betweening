@@ -45,13 +45,14 @@ sk_parents = [-1,  0,  1,  2,  3,  4,
 sk_joints_to_remove = [5,10,16,21,26]
 
 class Skeleton:
-    def __init__(self, offsets, parents, joints_left=None, joints_right=None, device=None):
+    def __init__(self, offsets, parents, joints_left=None, joints_right=None, bone_length=None, device=None):
         assert len(offsets) == len(parents)
         
         self._offsets = torch.Tensor(offsets).to(device)
         self._parents = np.array(parents)
         self._joints_left = joints_left
         self._joints_right = joints_right
+        self._bone_length = bone_length
         self._compute_metadata()
     
     def num_joints(self):
@@ -157,6 +158,19 @@ class Skeleton:
         
         return torch.stack(positions_world, dim=3).permute(0, 1, 3, 2), torch.stack(rotations_world, dim=3).permute(0, 1, 3, 2)
     
+
+    def bone_length(self):
+        bone_length = []
+
+        for i, parent in enumerate(self._parents):
+            if parent == -1:
+                bone_length.append(0)
+            else:
+                bone_length.append(torch.linalg.norm(self._offsets[i:i+1], ord='fro').item())
+
+        return bone_length
+
+
     def joints_left(self):
         return self._joints_left
     
@@ -174,4 +188,4 @@ class Skeleton:
             self._children.append([])
         for i, parent in enumerate(self._parents):
             if parent != -1:
-                self._children[parent].append(i)
+                self._children[parent].append(i)        

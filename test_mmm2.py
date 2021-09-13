@@ -5,6 +5,7 @@ from pathlib import Path
 import imageio
 import numpy as np
 import torch
+import torch.nn as nn
 from PIL import Image
 from sklearn.preprocessing import LabelEncoder
 
@@ -31,9 +32,6 @@ def test(opt, device):
     # Load Skeleton
     skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
     skeleton_mocap.remove_joints(sk_joints_to_remove)
-    
-    # Flip, Load and preprocess data. It utilizes LAFAN1 utilities
-    # flip_bvh(opt.data_path)
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
@@ -63,11 +61,10 @@ def test(opt, device):
 
     global_pos, global_q = skeleton_mocap.forward_kinematics_with_rotation(local_q_normalized, root_pos)
     
-    global_pos[:,fixed] += torch.Tensor([0,0,-15]).expand(2237,22,3)
+    global_pos[:,fixed] += torch.Tensor([0,0,0]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
 
     global_pose_vec_gt = vectorize_representation(global_pos, global_q)
     global_pose_vec_input = global_pose_vec_gt.clone().detach()
-
 
     pose_interpolated_input = interpolate_input_repr(global_pose_vec_input, fixed, num_clue, pos_dim, rot_dim)
 
@@ -84,11 +81,21 @@ def test(opt, device):
     src_mask = torch.zeros((horizon, horizon), device=device).type(torch.bool)
     src_mask = src_mask.to(device)
 
+    seq_categories = [x[:-1] for x in lafan_dataset.data['seq_names']]
+
+    le = LabelEncoder()
+    le.classes_ = np.load(os.path.join(save_dir, 'le_classes_.npy'))
+
+    target_seq = opt.motion_type
+    seq_id = np.where(le.classes_==target_seq)[0]
+    conditioning_labels = np.expand_dims((np.repeat(seq_id[0], repeats=len(seq_categories))), axis=1)
+    conditioning_labels = torch.Tensor(conditioning_labels).type(torch.int64).to(device)
+
     model = TransformerModel(seq_len=ckpt['horizon'], d_model=ckpt['d_model'], nhead=ckpt['nhead'], d_hid=ckpt['d_hid'], nlayers=ckpt['nlayers'], dropout=0.0, out_dim=repr_dim)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
-    output = model(pose_vectorized_input, src_mask, None, infilling_code)
+    output = model(pose_vectorized_input, src_mask, conditioning_labels, infilling_code)
 
     pos_pred = output[:,:,:pos_dim].permute(1,0,2)
 
@@ -127,11 +134,12 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='CMIP_GLOBAL_LERP_LOWAUTO3', help='experiment name')
+    parser.add_argument('--exp_name', default='CMIP_GLOBAL_LERP_wCOND', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
+    parser.add_argument('--motion_type', type=str, default='walk', help='motion type')
     opt = parser.parse_args()
     return opt
 

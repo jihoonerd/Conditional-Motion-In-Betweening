@@ -49,6 +49,8 @@ def train(opt, device):
     skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
     skeleton_mocap.remove_joints(sk_joints_to_remove)
 
+    bone_length = skeleton_mocap.bone_length()
+
     # Flip, Load and preprocess data. It utilizes LAFAN1 utilities
     flip_bvh(opt.data_path)
 
