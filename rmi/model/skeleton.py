@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 from rmi.data.quaternion import qmul_np, qmul, qrot
+import torch.nn as nn
 
 sk_offsets = [
        [-42.198200,91.614723,-40.067841],
@@ -52,7 +53,6 @@ class Skeleton:
         self._parents = np.array(parents)
         self._joints_left = joints_left
         self._joints_right = joints_right
-        self._bone_length = bone_length
         self._compute_metadata()
     
     def num_joints(self):
@@ -69,6 +69,45 @@ class Skeleton:
     
     def children(self):
         return self._children
+
+    def convert_to_global_pos(self, unit_vec_rerp):
+        """
+        Convert the unit offset matrix to global position.
+        First row(root) will have absolute position value in global coordinates.
+        """
+        bone_length = self.get_bone_length_weight()
+        batch_size = unit_vec_rerp.size(0)
+        seq_len = unit_vec_rerp.size(1)
+        unit_vec_table = unit_vec_rerp.reshape(batch_size, seq_len, 22, 3)
+        global_position = torch.zeros_like(unit_vec_table, device=unit_vec_table.device)
+        
+        for i, parent in enumerate(self._parents):
+            if parent == -1: # if root
+                global_position[:,:,i] = unit_vec_table[:,:,i]
+            
+            else:
+                global_position[:,:,i] = global_position[:,:,parent] + (nn.functional.normalize(unit_vec_table[:,:,i], p=2.0, dim=-1) * bone_length[i])
+                                        
+        return global_position
+
+    def convert_to_unit_offset_mat(self, global_position):
+        """
+        Convert the global position of the skeleton to a unit offset matrix.
+        First row(root) will have absolute position value in global coordinates.
+        """
+        
+        bone_length = self.get_bone_length_weight()
+        unit_offset_mat = torch.zeros_like(global_position, device=global_position.device)
+
+        for i, parent in enumerate(self._parents):
+
+            if parent == -1: # if root
+                unit_offset_mat[:,:,i] = global_position[:,:,i]
+            else:
+                unit_offset_mat[:,:,i] = (global_position[:,:,i] - global_position[:,:,parent]) / bone_length[i]
+                
+        return unit_offset_mat
+
     
     def remove_joints(self, joints_to_remove):
         """
@@ -159,16 +198,14 @@ class Skeleton:
         return torch.stack(positions_world, dim=3).permute(0, 1, 3, 2), torch.stack(rotations_world, dim=3).permute(0, 1, 3, 2)
     
 
-    def bone_length(self):
+    def get_bone_length_weight(self):
         bone_length = []
-
         for i, parent in enumerate(self._parents):
             if parent == -1:
-                bone_length.append(0)
+                bone_length.append(1)
             else:
                 bone_length.append(torch.linalg.norm(self._offsets[i:i+1], ord='fro').item())
-
-        return bone_length
+        return torch.Tensor(bone_length)
 
 
     def joints_left(self):
