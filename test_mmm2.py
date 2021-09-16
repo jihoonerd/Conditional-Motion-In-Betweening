@@ -27,7 +27,10 @@ def test(opt, device):
     ckpt = torch.load(latest_weight, map_location=device)
     print(f"Loaded weight: {latest_weight}")
 
-    ckpt['preserve_link_train'] = True
+    if ckpt['preserve_link_train']:
+        print("Link Preserving: Training")
+    else:
+        print("Link Prserving: Post Processing")
 
     # Load Skeleton
     skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)

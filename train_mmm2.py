@@ -57,22 +57,21 @@ def train(opt, device):
     horizon = target_idx - from_idx + 1
     print(f"Horizon: {horizon}")
 
-    if opt.preserve_link_train:
-        print("Use Link Preserving Setting...")
-
     root_pos = torch.Tensor(lafan_dataset.data['root_p'][:, from_idx:target_idx+1]).to(device)
     local_q = torch.Tensor(lafan_dataset.data['local_q'][:, from_idx:target_idx+1]).to(device)
     local_q_normalized = nn.functional.normalize(local_q, p=2.0, dim=-1)
 
     global_pos, global_q = skeleton_mocap.forward_kinematics_with_rotation(local_q_normalized, root_pos)
 
-    if opt.use_bone_length:
+    if opt.preserve_link_train:
+        print("Link Preserving: Training")
         print("USE BONE LENGTH NORMALIZATION...")
         global_pos = skeleton_mocap.convert_to_unit_offset_mat(global_pos)
         global_pose_vec_pos = global_pos.reshape(global_pos.size(0), global_pos.size(1), -1).contiguous()
         global_pose_vec_rot = global_q.reshape(global_q.size(0), global_q.size(1), -1).contiguous()
         global_pose_vec_gt = torch.cat([global_pose_vec_pos, global_pose_vec_rot], dim=2)
     else:
+        print("Link Prserving: Post Processing")
         global_pose_vec_gt = vectorize_representation(global_pos, global_q)
     global_pose_vec_input = global_pose_vec_gt.clone().detach()
 
@@ -110,7 +109,7 @@ def train(opt, device):
             for _ in range(5):
                 mask_start_frame = np.random.randint(0, horizon)
 
-                if opt.use_bone_length:
+                if opt.preserve_link_train:
                     root_pos = minibatch_pose_input[:,:,:3]
                     link_vec = minibatch_pose_input[:,:,3:pos_dim]
                     rot_vec = minibatch_pose_input[:,:,pos_dim:]
