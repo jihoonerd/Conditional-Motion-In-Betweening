@@ -4,7 +4,7 @@ python train_mmm2.py \
 	--epochs=10000 \
 	--device=2 \
 	--entity=rilab-motion \
-	--exp_name="CMIP_GLOBAL_LERP_wCOND" \
+	--exp_name="Link-NP-Global_003" \
 	--save_interval=100 \
 	--learning_rate=0.0001 \
 	--optim_beta1=0.9 \
@@ -12,4 +12,5 @@ python train_mmm2.py \
 	--loss_pos_weight=0.03 \
 	--loss_rot_weight=1.0 \
 	--from_idx=9 \
-	--target_idx=40
+	--target_idx=40 \
+	--use_bone_length
