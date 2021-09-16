@@ -1,4 +1,4 @@
-python train_mmm2.py \
+python train_mmm.py \
 	--processed_data_dir="processed_data_original/" \
 	--batch_size=1024 \
 	--epochs=10000 \
