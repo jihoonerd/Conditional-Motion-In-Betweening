@@ -6,7 +6,7 @@ import pickle
 import os 
 
 class LAFAN1Dataset(Dataset):
-    def __init__(self, lafan_path: str,processed_data_dir : str, train: bool, device: str, target_action: list, start_seq_length: int=5, cur_seq_length: int=5, max_transition_length: int=30, increase_rate: int=3):
+    def __init__(self, lafan_path: str, processed_data_dir : str, train: bool, device: str, target_action: list):
         self.lafan_path = lafan_path
 
         self.train = train
@@ -23,12 +23,6 @@ class LAFAN1Dataset(Dataset):
         # The training statistics for normalization are computed on windows of 50 frames offset by 20 frames.
         self.offset = 20 if self.train else 40
 
-        # 4.3 Table 3: Trained with transition lengths of maximum 30 frames and are evaluated on 5, 15, 30, 45 frames
-        self.start_seq_length = start_seq_length
-        self.cur_seq_length = cur_seq_length
-        self.increase_rate = increase_rate
-        self.max_transition_length = max_transition_length
-
         self.device = device
         
         pickle_name = "processed_train_data.pkl" if train else "processed_test_data.pkl"
@@ -36,7 +30,6 @@ class LAFAN1Dataset(Dataset):
         if pickle_name in os.listdir(processed_data_dir):
             with open(os.path.join(processed_data_dir, pickle_name), 'rb') as f:
                 self.data = pickle.load(f)
-                self.global_pos_std = self.data["global_pos_std"].to(self.device)
         else: 
             self.data = self.load_lafan()  # Call this last
             with open(os.path.join(processed_data_dir, pickle_name), 'wb') as f:
@@ -62,15 +55,12 @@ class LAFAN1Dataset(Dataset):
         # This uses method provided with LAFAN1.
         # X and Q are local position/quaternion. Motions are rotated to make 10th frame facing X+ position.
         # Refer to paper 3.1 Data formatting
-        X, Q, parents, contacts_l, contacts_r = extract.get_lafan1_set(
+        X, Q, parents, contacts_l, contacts_r, seq_names = extract.get_lafan1_set(
             self.lafan_path, self.actors, self.target_action, self.window, self.offset
         )
 
         # Retrieve global representations. (global quaternion, global positions)
         _, global_pos = utils.quat_fk(Q, X, parents)
-
-        # Extract std to scale position (refer to: 3.7.3: we scale all our losses...)
-        self.global_pos_std = torch.Tensor(global_pos.std(axis=(0, 1))).to(self.device)
 
         input_data = {}
         input_data["local_q"] = Q  # q_{t}
@@ -91,8 +81,7 @@ class LAFAN1Dataset(Dataset):
         input_data["global_pos"] = global_pos[
             :, :, :, :
         ]  # global position (N, 50, 22, 30) why not just global_pos
-        
-        input_data["global_pos_std"] = self.global_pos_std
+        input_data['seq_names'] = seq_names
         return input_data
 
     def __len__(self):

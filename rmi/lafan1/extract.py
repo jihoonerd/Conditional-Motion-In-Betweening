@@ -247,7 +247,7 @@ def get_lafan1_set(bvh_path, actors, action_name, window=50, offset=20):
     # Unify facing on last seed frame (default: 10th frame)
     X, Q = utils.rotate_at_frame(X, Q, anim.parents, n_past=npast)
 
-    return X, Q, anim.parents, contacts_l, contacts_r
+    return X, Q, anim.parents, contacts_l, contacts_r, seq_names
 
 
 def get_train_stats(bvh_folder, train_set):
