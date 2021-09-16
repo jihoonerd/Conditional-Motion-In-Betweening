@@ -22,7 +22,7 @@ def qmul(q, r):
     original_shape = q.shape
     
     # Compute outer product
-    terms = torch.bmm(r.view(-1, 4, 1), q.view(-1, 1, 4))
+    terms = torch.bmm(r.reshape(-1, 4, 1), q.reshape(-1, 1, 4))
 
     w = terms[:, 0, 0] - terms[:, 1, 1] - terms[:, 2, 2] - terms[:, 3, 3]
     x = terms[:, 0, 1] + terms[:, 1, 0] - terms[:, 2, 3] + terms[:, 3, 2]
@@ -42,8 +42,8 @@ def qrot(q, v):
     assert q.shape[:-1] == v.shape[:-1]
     
     original_shape = list(v.shape)
-    q = q.view(-1, 4)
-    v = v.view(-1, 3)
+    q = q.reshape(-1, 4)
+    v = v.reshape(-1, 3)
     
     qvec = q[:, 1:]
     uv = torch.cross(qvec, v, dim=1)
