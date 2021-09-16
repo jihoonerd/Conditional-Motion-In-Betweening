@@ -7,15 +7,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 from PIL import Image
-from sklearn.preprocessing import LabelEncoder
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
-from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import replace_noise, vectorize_pose, replace_inpainting_range,  vectorize_representation, lerp_input_repr, lerp_reshaped
+from rmi.model.preprocess import (lerp_input_repr, lerp_reshaped,
+                                  vectorize_representation)
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
-from rmi.vis.pose import plot_pose, plot_pose_with_stop, plot_single_pose
+from rmi.vis.pose import plot_pose, plot_pose_with_stop
 
 
 def test(opt, device):
@@ -27,6 +26,8 @@ def test(opt, device):
     latest_weight = max(weights_paths , key = os.path.getctime)
     ckpt = torch.load(latest_weight, map_location=device)
     print(f"Loaded weight: {latest_weight}")
+
+    ckpt['preserve_link_train'] = True
 
     # Load Skeleton
     skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
@@ -77,19 +78,19 @@ def test(opt, device):
         link_lerped = lerp_reshaped(link_vec, fixed, 21)
         rot_lerped = lerp_reshaped(rot_vec, fixed, 22)
         pose_interpolated_input = torch.cat([root_lerped, link_lerped, rot_lerped], dim=2)
+        input_pos = skeleton_mocap.convert_to_global_pos(pose_interpolated_input[:,:,:pos_dim])
 
     else:
         global_pose_vec_gt = vectorize_representation(global_pos, global_q)
         global_pose_vec_input = global_pose_vec_gt.clone().detach()
         pose_interpolated_input = lerp_input_repr(global_pose_vec_input, fixed)
+        input_pos = pose_interpolated_input[:,:,:pos_dim]
     
 
     infilling_code = np.zeros((1, horizon))
     infilling_code[0, 1:fixed] = 1
     infilling_code[0, fixed+1:-1] = 1
     infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
-
-    input_pos = pose_interpolated_input[:,:,:pos_dim]
 
     pose_vectorized_input = pose_interpolated_input.permute(1,0,2)
 
@@ -105,10 +106,15 @@ def test(opt, device):
     if ckpt['preserve_link_train']:
         pred_global_pos = output[:,:,:pos_dim].permute(1,0,2)
         pred_global_pos = skeleton_mocap.convert_to_global_pos(pred_global_pos)
+
+        clue = global_pos.clone().detach().reshape(global_pos.size(0), global_pos.size(1), -1)
+        clue = skeleton_mocap.convert_to_global_pos(clue)
+
     else:
         pred_global_pos = output[:,:,:pos_dim].permute(1,0,2).reshape(4474,32,22,3)
         global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
         pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec)
+        clue = global_pos.clone().detach()
         
 
     # Compare Input data, Prediction, GT
@@ -118,7 +124,7 @@ def test(opt, device):
 
         start_pose =  lafan_dataset.data['global_pos'][test_idx[i], from_idx]
         target_pose = lafan_dataset.data['global_pos'][test_idx[i], target_idx]
-        stopover_pose = global_pos[test_idx[i],fixed]
+        stopover_pose = clue[test_idx[i],fixed]
         gt_stopover_pose = lafan_dataset.data['global_pos'][test_idx[i], from_idx + fixed]
 
         img_aggr_list = []
