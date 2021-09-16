@@ -11,6 +11,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
+from sklearn.preprocessing import LabelEncoder
+
 import wandb
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
@@ -75,7 +77,14 @@ def train(opt, device):
         global_pose_vec_gt = vectorize_representation(global_pos, global_q)
     global_pose_vec_input = global_pose_vec_gt.clone().detach()
 
-    tensor_dataset = TensorDataset(global_pose_vec_input, global_pose_vec_gt)
+    seq_categories = [x[:-1] for x in lafan_dataset.data['seq_names']]
+
+    le = LabelEncoder()
+    le_np = le.fit_transform(seq_categories)
+    seq_labels = torch.Tensor(le_np).type(torch.int64).unsqueeze(1).to(device)
+    np.save(f'{save_dir}/le_classes_.npy', le.classes_)
+
+    tensor_dataset = TensorDataset(global_pose_vec_input, global_pose_vec_gt, seq_labels)
     lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
 
     pos_dim = lafan_dataset.num_joints * 3
@@ -98,7 +107,7 @@ def train(opt, device):
         recon_rot_loss = []
         total_loss_list = []
 
-        for minibatch_pose_input, minibatch_pose_gt in pbar:
+        for minibatch_pose_input, minibatch_pose_gt, seq_label in pbar:
 
             cur_batch_size = minibatch_pose_input.size(0)
             seq_len = minibatch_pose_input.size(1)
@@ -132,7 +141,7 @@ def train(opt, device):
                 src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
                 src_mask = src_mask.to(device)
                 
-                output = transformer_encoder(pose_interpolated_input, src_mask, infilling_code)
+                output = transformer_encoder(pose_interpolated_input, src_mask, seq_label, infilling_code)
 
                 pos_pred = output[:,:,:pos_dim].permute(1,0,2)
                 pos_gt = minibatch_pose_gt[:,:,:pos_dim]
