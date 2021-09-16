@@ -14,7 +14,7 @@ from rmi.model.preprocess import (lerp_input_repr, lerp_reshaped,
                                   vectorize_representation)
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
-from rmi.vis.pose import plot_pose, plot_pose_with_stop
+from rmi.vis.pose import plot_pose_with_stop
 
 
 def test(opt, device):
