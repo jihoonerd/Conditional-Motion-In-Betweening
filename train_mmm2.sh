@@ -13,4 +13,4 @@ python train_mmm2.py \
 	--loss_rot_weight=1.0 \
 	--from_idx=9 \
 	--target_idx=40 \
-	--use_bone_length
+	--preserve_link_train
