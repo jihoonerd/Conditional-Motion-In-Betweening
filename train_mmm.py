@@ -137,7 +137,11 @@ def train(opt, device):
                 src_mask = src_mask.to(device)
                 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 output = transformer_encoder(pose_interpolated_input, src_mask, seq_label, infilling_code)
+=======
+                output = transformer_encoder(pose_interpolated_input, src_mask, seq_label)
+>>>>>>> Stashed changes
 =======
                 output = transformer_encoder(pose_interpolated_input, src_mask, seq_label)
 >>>>>>> Stashed changes
