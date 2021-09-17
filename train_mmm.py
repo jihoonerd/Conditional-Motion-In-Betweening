@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 import yaml
 from torch.optim import Adam
+from sklearn.preprocessing import LabelEncoder
+
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
@@ -129,19 +131,16 @@ def train(opt, device):
                 else:
                     pose_interpolated_input = lerp_input_repr(minibatch_pose_input, mask_start_frame)
     
-                ## MAKE INFILLING CODE HERE ##
-                infilling_code = np.zeros((1, horizon))
-                infilling_code[0, 1:mask_start_frame] = 1
-                infilling_code[0, mask_start_frame+num_clue:-1] = 1
-                infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
-                ##############################
-
                 pose_interpolated_input = pose_interpolated_input.permute(1,0,2)
 
                 src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
                 src_mask = src_mask.to(device)
                 
+<<<<<<< Updated upstream
                 output = transformer_encoder(pose_interpolated_input, src_mask, seq_label, infilling_code)
+=======
+                output = transformer_encoder(pose_interpolated_input, src_mask, seq_label)
+>>>>>>> Stashed changes
 
                 pos_pred = output[:,:,:pos_dim].permute(1,0,2)
                 pos_gt = minibatch_pose_gt[:,:,:pos_dim]
