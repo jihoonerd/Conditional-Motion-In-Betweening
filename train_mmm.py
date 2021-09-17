@@ -136,15 +136,7 @@ def train(opt, device):
                 src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
                 src_mask = src_mask.to(device)
                 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-                output = transformer_encoder(pose_interpolated_input, src_mask, seq_label, infilling_code)
-=======
                 output = transformer_encoder(pose_interpolated_input, src_mask, seq_label)
->>>>>>> Stashed changes
-=======
-                output = transformer_encoder(pose_interpolated_input, src_mask, seq_label)
->>>>>>> Stashed changes
 
                 pos_pred = output[:,:,:pos_dim].permute(1,0,2)
                 pos_gt = minibatch_pose_gt[:,:,:pos_dim]
