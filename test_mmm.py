@@ -46,8 +46,8 @@ def test(opt, device):
     print(f"HORIZON: {horizon}")
 
     test_idx = []
-    for i in range(1, 20):
-        test_idx.append(i * 200)
+    for i in range(1, 10):
+        test_idx.append(i * 400)
 
     # Extract dimension from processed data
     pos_dim = lafan_dataset.num_joints * 3
@@ -64,7 +64,7 @@ def test(opt, device):
 
     global_pos, global_q = skeleton_mocap.forward_kinematics_with_rotation(local_q_normalized, root_pos)
 
-    global_pos[:,fixed] += torch.Tensor([0,35,0]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
+    global_pos[:,fixed] += torch.Tensor([0,0,10]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
 
     if ckpt['preserve_link_train']:
         print("USE BONE LENGTH NORMALIZATION...")
@@ -89,12 +89,6 @@ def test(opt, device):
         pose_interpolated_input = lerp_input_repr(global_pose_vec_input, fixed)
         input_pos = pose_interpolated_input[:,:,:pos_dim]
     
-
-    infilling_code = np.zeros((1, horizon))
-    infilling_code[0, 1:fixed] = 1
-    infilling_code[0, fixed+1:-1] = 1
-    infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
-
     pose_vectorized_input = pose_interpolated_input.permute(1,0,2)
 
     src_mask = torch.zeros((horizon, horizon), device=device).type(torch.bool)
@@ -104,7 +98,7 @@ def test(opt, device):
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
-    output = model(pose_vectorized_input, src_mask, infilling_code)
+    output = model(pose_vectorized_input, src_mask)
 
     if ckpt['preserve_link_train']:
         pred_global_pos = output[:,:,:pos_dim].permute(1,0,2)
@@ -154,7 +148,7 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='Link-Preserving_wQUAT', help='experiment name')
+    parser.add_argument('--exp_name', default='preserve_link_pp_wo_infillemb', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')

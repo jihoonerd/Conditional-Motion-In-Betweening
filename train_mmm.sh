@@ -2,10 +2,10 @@ python train_mmm.py \
 	--processed_data_dir="processed_data_original/" \
 	--batch_size=1024 \
 	--epochs=10000 \
-	--device=3 \
+	--device=2 \
 	--entity=rilab-motion \
-	--exp_name="preserve_link_pp" \
-	--save_interval=100 \
+	--exp_name="preserve_link_pp_wo_infillemb" \
+	--save_interval=50 \
 	--learning_rate=0.0001 \
 	--optim_beta1=0.9 \
 	--optim_beta2=0.99 \
