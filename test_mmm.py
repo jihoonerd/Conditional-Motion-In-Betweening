@@ -48,7 +48,7 @@ def test(opt, device):
 
     test_idx = []
     for i in range(1, 10):
-        test_idx.append(i * 400)
+        test_idx.append(i * 125)
 
     # Extract dimension from processed data
     pos_dim = lafan_dataset.num_joints * 3
@@ -109,7 +109,7 @@ def test(opt, device):
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
-    output = model(pose_vectorized_input, src_mask, conditioning_labels)
+    output, cond_pred = model(pose_vectorized_input, src_mask, conditioning_labels)
 
     if ckpt['preserve_link_train']:
         pred_global_pos = output[:,:,:pos_dim].permute(1,0,2)
@@ -119,7 +119,7 @@ def test(opt, device):
         clue = skeleton_mocap.convert_to_global_pos(clue)
 
     else:
-        pred_global_pos = output[:,:,:pos_dim].permute(1,0,2).reshape(4474,32,22,3)
+        pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(4474,32,22,3)
         global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
         pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec)
         clue = global_pos.clone().detach()
@@ -136,7 +136,7 @@ def test(opt, device):
         gt_stopover_pose = lafan_dataset.data['global_pos'][test_idx[i], from_idx + fixed]
 
         img_aggr_list = []
-        for t in range(horizon):
+        for t in range(horizon-1):
             
             input_img_path = os.path.join(save_path, 'input')
             plot_pose_with_stop(start_pose, input_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3).detach().numpy(), target_pose, stopover_pose, t, skeleton_mocap, save_dir=input_img_path, prefix='input')
@@ -159,7 +159,7 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='noised_0_only_model', help='experiment name')
+    parser.add_argument('--exp_name', default='ctrl_condition', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
