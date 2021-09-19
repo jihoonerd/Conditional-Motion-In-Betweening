@@ -188,7 +188,7 @@ class TransformerModel(nn.Module):
         self.nhead = nhead
         self.d_hid = d_hid
         self.nlayers = nlayers
-        self.cond_emb = nn.Embedding(1, d_model)
+        self.cond_emb = nn.Embedding(15, d_model)
         self.pos_embedding= PositionalEmbedding(seq_len=seq_len, d_model=d_model)
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, activation='gelu')
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
@@ -210,11 +210,12 @@ class TransformerModel(nn.Module):
         Returns:
             output Tensor of shape [seq_len, batch_size, embedding_dim]
         """
-        cond_embedding = self.cond_emb(cond_code)
+        cond_embedding = self.cond_emb(cond_code).permute(1,0,2)
         output = self.pos_embedding(src)
+        output = torch.cat([cond_embedding, output], dim=0)
         output = self.transformer_encoder(output, src_mask)
         output = self.decoder(output)
-        return output
+        return output, cond_embedding
 
 
 class InputEncoder(nn.Module):

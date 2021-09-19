@@ -60,7 +60,8 @@ def train(opt, device):
     from_idx, target_idx = opt.from_idx, opt.target_idx  # default: 9-40, max: 48
     horizon = target_idx - from_idx + 1
     print(f"Horizon: {horizon}")
-    print(f"Horizon with Conditioning: {horizon + 1}")
+    horizon += 1
+    print(f"Horizon with Conditioning: {horizon}")
 
     root_pos = torch.Tensor(lafan_dataset.data['root_p'][:, from_idx:target_idx+1]).to(device)
     local_q = torch.Tensor(lafan_dataset.data['local_q'][:, from_idx:target_idx+1]).to(device)
@@ -95,7 +96,7 @@ def train(opt, device):
     repr_dim = pos_dim + rot_dim
     nhead = 7 # repr_dim = 154
 
-    transformer_encoder = TransformerModel(seq_len=horizon+1, d_model=repr_dim, nhead=nhead, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim)
+    transformer_encoder = TransformerModel(seq_len=horizon, d_model=repr_dim, nhead=nhead, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim)
     transformer_encoder.to(device)
 
     l1_loss = nn.L1Loss()
@@ -106,15 +107,12 @@ def train(opt, device):
 
         pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
 
+        recon_cond_loss = []
         recon_pos_loss = []
         recon_rot_loss = []
         total_loss_list = []
 
         for minibatch_pose_input, minibatch_pose_gt, seq_label in pbar:
-
-            cur_batch_size = minibatch_pose_input.size(0)
-            seq_len = minibatch_pose_input.size(1)
-            feature_dims = minibatch_pose_input.size(2)
 
             num_clue = 1
 
@@ -135,23 +133,28 @@ def train(opt, device):
 
             pose_interpolated_input = pose_interpolated_input.permute(1,0,2)
 
-            src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
+            src_mask = torch.zeros((horizon, horizon), device=device).type(torch.bool)
             src_mask = src_mask.to(device)
             
-            output = transformer_encoder(pose_interpolated_input, src_mask, seq_label)
+            output, cond_gt = transformer_encoder(pose_interpolated_input, src_mask, seq_label)
 
-            pos_pred = output[:,:,:pos_dim].permute(1,0,2)
+            cond_pred = output[0:1, :, :]
+            cond_loss = l1_loss(cond_pred, cond_gt)
+            recon_cond_loss.append(opt.loss_cond_weight * cond_loss)
+
+            pos_pred = output[1:,:,:pos_dim].permute(1,0,2)
             pos_gt = minibatch_pose_gt[:,:,:pos_dim]
             pos_loss = l1_loss(pos_pred, pos_gt)
             recon_pos_loss.append(opt.loss_pos_weight * pos_loss)
 
-            rot_pred = output[:,:,pos_dim:].permute(1,0,2)
+            rot_pred = output[1:,:,pos_dim:].permute(1,0,2)
             rot_gt = minibatch_pose_gt[:,:,pos_dim:]
             rot_loss = l1_loss(rot_pred, rot_gt)
             recon_rot_loss.append(opt.loss_rot_weight * rot_loss)
 
             total_g_loss = opt.loss_pos_weight * pos_loss + \
-                            opt.loss_rot_weight * rot_loss
+                            opt.loss_rot_weight * rot_loss + \
+                            opt.loss_cond_weight * cond_loss
 
             total_loss_list.append(total_g_loss)
         
@@ -164,6 +167,7 @@ def train(opt, device):
 
         # Log
         log_dict = {
+            "Train/Loss/Condition Loss": torch.stack(recon_cond_loss).mean().item(), 
             "Train/Loss/Position Loss": torch.stack(recon_pos_loss).mean().item(), 
             "Train/Loss/Rotatation Loss": torch.stack(recon_rot_loss).mean().item(),
             "Train/Loss/Total Loss": torch.stack(total_loss_list).mean().item(),
@@ -202,13 +206,14 @@ def parse_opt():
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--device', default='2', help='cuda device, i.e. 0 or -1 or cpu')
+    parser.add_argument('--device', default='1', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=1, help='Log model after every "save_period" epoch')
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='generator_learning_rate')
     parser.add_argument('--optim_beta1', type=float, default=0.9, help='optim_beta1')
     parser.add_argument('--optim_beta2', type=float, default=0.99, help='optim_beta2')
+    parser.add_argument('--loss_cond_weight', type=float, default=1.0, help='loss_cond_weight')
     parser.add_argument('--loss_pos_weight', type=float, default=1.0, help='loss_pos_weight')
     parser.add_argument('--loss_rot_weight', type=float, default=1.0, help='loss_rot_weight')
     parser.add_argument('--from_idx', type=int, default=9, help='from idx')
