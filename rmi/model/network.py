@@ -188,6 +188,7 @@ class TransformerModel(nn.Module):
         self.nhead = nhead
         self.d_hid = d_hid
         self.nlayers = nlayers
+        self.cond_emb = nn.Embedding(1, d_model)
         self.pos_embedding= PositionalEmbedding(seq_len=seq_len, d_model=d_model)
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, activation='gelu')
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
@@ -209,7 +210,8 @@ class TransformerModel(nn.Module):
         Returns:
             output Tensor of shape [seq_len, batch_size, embedding_dim]
         """
-        output = self.pos_embedding(src, cond_code)
+        cond_embedding = self.cond_emb(cond_code)
+        output = self.pos_embedding(src)
         output = self.transformer_encoder(output, src_mask)
         output = self.decoder(output)
         return output

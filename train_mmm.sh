@@ -1,10 +1,10 @@
 python train_mmm.py \
 	--processed_data_dir="processed_data_original/" \
-	--batch_size=1024 \
+	--batch_size=32 \
 	--epochs=10000 \
-	--device=2 \
+	--device=3 \
 	--entity=rilab-motion \
-	--exp_name="preserve_link_pp_wo_infillemb" \
+	--exp_name="noised_0_only_model" \
 	--save_interval=50 \
 	--learning_rate=0.0001 \
 	--optim_beta1=0.9 \

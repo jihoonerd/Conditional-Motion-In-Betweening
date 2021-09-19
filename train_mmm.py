@@ -19,7 +19,7 @@ import wandb
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import (lerp_input_repr, lerp_reshaped,
+from rmi.model.preprocess import (lerp_input_repr, lerp_reshaped, replace_noise,
                                   vectorize_representation)
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
@@ -60,6 +60,7 @@ def train(opt, device):
     from_idx, target_idx = opt.from_idx, opt.target_idx  # default: 9-40, max: 48
     horizon = target_idx - from_idx + 1
     print(f"Horizon: {horizon}")
+    print(f"Horizon with Conditioning: {horizon + 1}")
 
     root_pos = torch.Tensor(lafan_dataset.data['root_p'][:, from_idx:target_idx+1]).to(device)
     local_q = torch.Tensor(lafan_dataset.data['local_q'][:, from_idx:target_idx+1]).to(device)
@@ -94,7 +95,7 @@ def train(opt, device):
     repr_dim = pos_dim + rot_dim
     nhead = 7 # repr_dim = 154
 
-    transformer_encoder = TransformerModel(seq_len=horizon, d_model=repr_dim, nhead=nhead, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim)
+    transformer_encoder = TransformerModel(seq_len=horizon+1, d_model=repr_dim, nhead=nhead, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim)
     transformer_encoder.to(device)
 
     l1_loss = nn.L1Loss()
@@ -117,46 +118,47 @@ def train(opt, device):
 
             num_clue = 1
 
-            for _ in range(5):
-                mask_start_frame = np.random.randint(0, horizon)
+            # for _ in range(5):
+            # mask_start_frame = np.random.randint(0, horizon)
+            mask_start_frame = 0
 
-                if opt.preserve_link_train:
-                    root_pos = minibatch_pose_input[:,:,:3]
-                    link_vec = minibatch_pose_input[:,:,3:pos_dim]
-                    rot_vec = minibatch_pose_input[:,:,pos_dim:]
-                    root_lerped = lerp_input_repr(root_pos, mask_start_frame)
-                    link_lerped = lerp_reshaped(link_vec, mask_start_frame, 21)
-                    rot_lerped = lerp_reshaped(rot_vec, mask_start_frame, 22)
-                    pose_interpolated_input = torch.cat([root_lerped, link_lerped, rot_lerped], dim=2)
-                else:
-                    pose_interpolated_input = lerp_input_repr(minibatch_pose_input, mask_start_frame)
-    
-                pose_interpolated_input = pose_interpolated_input.permute(1,0,2)
+            if opt.preserve_link_train:
+                root_pos = minibatch_pose_input[:,:,:3]
+                link_vec = minibatch_pose_input[:,:,3:pos_dim]
+                rot_vec = minibatch_pose_input[:,:,pos_dim:]
+                root_lerped = lerp_input_repr(root_pos, mask_start_frame)
+                link_lerped = lerp_reshaped(link_vec, mask_start_frame, 21)
+                rot_lerped = lerp_reshaped(rot_vec, mask_start_frame, 22)
+                pose_interpolated_input = torch.cat([root_lerped, link_lerped, rot_lerped], dim=2)
+            else:
+                pose_interpolated_input = replace_noise(minibatch_pose_input, mask_start_frame)
 
-                src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
-                src_mask = src_mask.to(device)
-                
-                output = transformer_encoder(pose_interpolated_input, src_mask, seq_label)
+            pose_interpolated_input = pose_interpolated_input.permute(1,0,2)
 
-                pos_pred = output[:,:,:pos_dim].permute(1,0,2)
-                pos_gt = minibatch_pose_gt[:,:,:pos_dim]
-                pos_loss = l1_loss(pos_pred, pos_gt)
-                recon_pos_loss.append(opt.loss_pos_weight * pos_loss)
-
-                rot_pred = output[:,:,pos_dim:].permute(1,0,2)
-                rot_gt = minibatch_pose_gt[:,:,pos_dim:]
-                rot_loss = l1_loss(rot_pred, rot_gt)
-                recon_rot_loss.append(opt.loss_rot_weight * rot_loss)
-
-                total_g_loss = opt.loss_pos_weight * pos_loss + \
-                                opt.loss_rot_weight * rot_loss
-
-                total_loss_list.append(total_g_loss)
+            src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
+            src_mask = src_mask.to(device)
             
-                optim.zero_grad()
-                total_g_loss.backward()
-                torch.nn.utils.clip_grad_norm_(transformer_encoder.parameters(), 1.0, error_if_nonfinite=False)
-                optim.step()
+            output = transformer_encoder(pose_interpolated_input, src_mask, seq_label)
+
+            pos_pred = output[:,:,:pos_dim].permute(1,0,2)
+            pos_gt = minibatch_pose_gt[:,:,:pos_dim]
+            pos_loss = l1_loss(pos_pred, pos_gt)
+            recon_pos_loss.append(opt.loss_pos_weight * pos_loss)
+
+            rot_pred = output[:,:,pos_dim:].permute(1,0,2)
+            rot_gt = minibatch_pose_gt[:,:,pos_dim:]
+            rot_loss = l1_loss(rot_pred, rot_gt)
+            recon_rot_loss.append(opt.loss_rot_weight * rot_loss)
+
+            total_g_loss = opt.loss_pos_weight * pos_loss + \
+                            opt.loss_rot_weight * rot_loss
+
+            total_loss_list.append(total_g_loss)
+        
+            optim.zero_grad()
+            total_g_loss.backward()
+            torch.nn.utils.clip_grad_norm_(transformer_encoder.parameters(), 1.0, error_if_nonfinite=False)
+            optim.step()
 
         scheduler.step()
 
@@ -200,7 +202,7 @@ def parse_opt():
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or -1 or cpu')
+    parser.add_argument('--device', default='2', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=1, help='Log model after every "save_period" epoch')
