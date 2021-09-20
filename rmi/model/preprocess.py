@@ -2,28 +2,41 @@ import torch
 import numpy as np
 
 
-def replace_noise(data, from_idx=9, target_idx=40, fixed=None):
+def replace_noise(minibatch_pose_input, mask_start_frame):
+    
+    seq_len = minibatch_pose_input.size(1)
+    interpolated = torch.ones_like(minibatch_pose_input, device=minibatch_pose_input.device) * 0.1
 
-    root_p = data['root_p'].copy()
-    local_q = data['local_q'].copy()
+    if mask_start_frame == 0 or mask_start_frame == (seq_len -1):
+        interpolate_start = minibatch_pose_input[:,0,:]
+        interpolate_end = minibatch_pose_input[:,seq_len-1,:]
 
-    if not fixed:
-        # Starting frame: 9, Endframe:40, Inbetween start: 10, Inbetween end: 39
-        noise_root_p = np.random.normal(size=(root_p.shape[0], target_idx-from_idx-1, root_p.shape[2]))
-        root_p[:,from_idx+1:target_idx,:] = noise_root_p # Replace with noise from [from_idx, target_idx)
+        interpolated[:,0,:] = interpolate_start
+        interpolated[:,seq_len-1,:] = interpolate_end
 
-        noise_local_q = np.random.normal(size=(local_q.shape[0], target_idx-from_idx-1, local_q.shape[2], local_q.shape[3]))
-        local_q[:,from_idx+1:target_idx,:] = noise_local_q
+        assert torch.allclose(interpolated[:,0,:], interpolate_start)
+        assert torch.allclose(interpolated[:,seq_len-1,:], interpolate_end)
+
     else:
-        noise_root_p = np.random.normal(size=(root_p.shape[0], target_idx-from_idx-1, root_p.shape[2]))
-        root_p[:,from_idx+1:from_idx+1+fixed,:] = noise_root_p[:,:fixed,:]
-        root_p[:,from_idx+1+fixed+1:target_idx,:] = noise_root_p[:,fixed+1:,:]
+        interpolate_start1 = minibatch_pose_input[:,0,:]
+        interpolate_end1 = minibatch_pose_input[:,mask_start_frame,:]
 
-        noise_local_q = np.random.normal(size=(local_q.shape[0], target_idx-from_idx-1, local_q.shape[2], local_q.shape[3]))
-        local_q[:,from_idx+1:from_idx+1+fixed,:] = noise_local_q[:,:fixed,:,:]
-        local_q[:,from_idx+1+fixed+1:target_idx,:] = noise_local_q[:,fixed+1:,:,:]
+        interpolate_start2 = minibatch_pose_input[:, mask_start_frame, :]
+        interpolate_end2 = minibatch_pose_input[:, seq_len-1,:]
 
-    return root_p, local_q
+        interpolated[:,0,:] = interpolate_start1
+        interpolated[:,mask_start_frame,:] = interpolate_end1
+
+        interpolated[:,mask_start_frame,:] = interpolate_start2
+        interpolated[:,seq_len-1,:] = interpolate_end2
+
+        
+        assert torch.allclose(interpolated[:,0,:], interpolate_start1)
+        assert torch.allclose(interpolated[:,mask_start_frame,:], interpolate_end1)
+        
+        assert torch.allclose(interpolated[:,mask_start_frame,:], interpolate_start2)
+        assert torch.allclose(interpolated[:,seq_len-1,:], interpolate_end2)
+    return interpolated
 
 
 def replace_inpainting_range(pose_vectorized_input, mask_start_frame, num_masks, batch_size, feature_dims, infill_value=0.1):
