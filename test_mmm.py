@@ -61,7 +61,6 @@ def test(opt, device):
 
     # Replace testing inputs
     fixed = 0
-    num_clue = 1
 
     global_pos, global_q = skeleton_mocap.forward_kinematics_with_rotation(local_q_normalized, root_pos)
 
@@ -112,14 +111,14 @@ def test(opt, device):
     output, cond_pred = model(pose_vectorized_input, src_mask, conditioning_labels)
 
     if ckpt['preserve_link_train']:
-        pred_global_pos = output[:,:,:pos_dim].permute(1,0,2)
+        pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2)
         pred_global_pos = skeleton_mocap.convert_to_global_pos(pred_global_pos)
 
         clue = global_pos.clone().detach().reshape(global_pos.size(0), global_pos.size(1), -1)
         clue = skeleton_mocap.convert_to_global_pos(clue)
 
     else:
-        pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(4474,32,22,3)
+        pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(4474,horizon-1,22,3)
         global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
         pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec)
         clue = global_pos.clone().detach()
@@ -159,7 +158,7 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='ctrl_condition', help='experiment name')
+    parser.add_argument('--exp_name', default='ctrl_condition_rnd_msk_long_hor', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
