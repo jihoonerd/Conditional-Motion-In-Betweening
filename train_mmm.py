@@ -114,54 +114,52 @@ def train(opt, device):
 
         for minibatch_pose_input, minibatch_pose_gt, seq_label in pbar:
 
-            num_clue = 1
+            for _ in range(5):
+                mask_start_frame = np.random.randint(0, horizon-1)
+                # mask_start_frame = 0
 
-            # for _ in range(5):
-            # mask_start_frame = np.random.randint(0, horizon)
-            mask_start_frame = 0
+                if opt.preserve_link_train:
+                    root_pos = minibatch_pose_input[:,:,:3]
+                    link_vec = minibatch_pose_input[:,:,3:pos_dim]
+                    rot_vec = minibatch_pose_input[:,:,pos_dim:]
+                    root_lerped = lerp_input_repr(root_pos, mask_start_frame)
+                    link_lerped = lerp_reshaped(link_vec, mask_start_frame, 21)
+                    rot_lerped = lerp_reshaped(rot_vec, mask_start_frame, 22)
+                    pose_interpolated_input = torch.cat([root_lerped, link_lerped, rot_lerped], dim=2)
+                else:
+                    pose_interpolated_input = replace_noise(minibatch_pose_input, mask_start_frame)
 
-            if opt.preserve_link_train:
-                root_pos = minibatch_pose_input[:,:,:3]
-                link_vec = minibatch_pose_input[:,:,3:pos_dim]
-                rot_vec = minibatch_pose_input[:,:,pos_dim:]
-                root_lerped = lerp_input_repr(root_pos, mask_start_frame)
-                link_lerped = lerp_reshaped(link_vec, mask_start_frame, 21)
-                rot_lerped = lerp_reshaped(rot_vec, mask_start_frame, 22)
-                pose_interpolated_input = torch.cat([root_lerped, link_lerped, rot_lerped], dim=2)
-            else:
-                pose_interpolated_input = replace_noise(minibatch_pose_input, mask_start_frame)
+                pose_interpolated_input = pose_interpolated_input.permute(1,0,2)
 
-            pose_interpolated_input = pose_interpolated_input.permute(1,0,2)
+                src_mask = torch.zeros((horizon, horizon), device=device).type(torch.bool)
+                src_mask = src_mask.to(device)
+                
+                output, cond_gt = transformer_encoder(pose_interpolated_input, src_mask, seq_label)
 
-            src_mask = torch.zeros((horizon, horizon), device=device).type(torch.bool)
-            src_mask = src_mask.to(device)
+                cond_pred = output[0:1, :, :]
+                cond_loss = l1_loss(cond_pred, cond_gt)
+                recon_cond_loss.append(opt.loss_cond_weight * cond_loss)
+
+                pos_pred = output[1:,:,:pos_dim].permute(1,0,2)
+                pos_gt = minibatch_pose_gt[:,:,:pos_dim]
+                pos_loss = l1_loss(pos_pred, pos_gt)
+                recon_pos_loss.append(opt.loss_pos_weight * pos_loss)
+
+                rot_pred = output[1:,:,pos_dim:].permute(1,0,2)
+                rot_gt = minibatch_pose_gt[:,:,pos_dim:]
+                rot_loss = l1_loss(rot_pred, rot_gt)
+                recon_rot_loss.append(opt.loss_rot_weight * rot_loss)
+
+                total_g_loss = opt.loss_pos_weight * pos_loss + \
+                                opt.loss_rot_weight * rot_loss + \
+                                opt.loss_cond_weight * cond_loss
+
+                total_loss_list.append(total_g_loss)
             
-            output, cond_gt = transformer_encoder(pose_interpolated_input, src_mask, seq_label)
-
-            cond_pred = output[0:1, :, :]
-            cond_loss = l1_loss(cond_pred, cond_gt)
-            recon_cond_loss.append(opt.loss_cond_weight * cond_loss)
-
-            pos_pred = output[1:,:,:pos_dim].permute(1,0,2)
-            pos_gt = minibatch_pose_gt[:,:,:pos_dim]
-            pos_loss = l1_loss(pos_pred, pos_gt)
-            recon_pos_loss.append(opt.loss_pos_weight * pos_loss)
-
-            rot_pred = output[1:,:,pos_dim:].permute(1,0,2)
-            rot_gt = minibatch_pose_gt[:,:,pos_dim:]
-            rot_loss = l1_loss(rot_pred, rot_gt)
-            recon_rot_loss.append(opt.loss_rot_weight * rot_loss)
-
-            total_g_loss = opt.loss_pos_weight * pos_loss + \
-                            opt.loss_rot_weight * rot_loss + \
-                            opt.loss_cond_weight * cond_loss
-
-            total_loss_list.append(total_g_loss)
-        
-            optim.zero_grad()
-            total_g_loss.backward()
-            torch.nn.utils.clip_grad_norm_(transformer_encoder.parameters(), 1.0, error_if_nonfinite=False)
-            optim.step()
+                optim.zero_grad()
+                total_g_loss.backward()
+                torch.nn.utils.clip_grad_norm_(transformer_encoder.parameters(), 1.0, error_if_nonfinite=False)
+                optim.step()
 
         scheduler.step()
 
