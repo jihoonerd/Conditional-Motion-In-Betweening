@@ -10,11 +10,12 @@ from PIL import Image
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import (lerp_input_repr, lerp_reshaped,
+from rmi.model.preprocess import (lerp_input_repr, lerp_reshaped, replace_noise,
                                   vectorize_representation)
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
 from rmi.vis.pose import plot_pose_with_stop
+from sklearn.preprocessing import LabelEncoder
 
 
 def test(opt, device):
@@ -46,8 +47,8 @@ def test(opt, device):
     print(f"HORIZON: {horizon}")
 
     test_idx = []
-    for i in range(1, 20):
-        test_idx.append(i * 200)
+    for i in range(1, 10):
+        test_idx.append(i * 125)
 
     # Extract dimension from processed data
     pos_dim = lafan_dataset.num_joints * 3
@@ -59,12 +60,11 @@ def test(opt, device):
     local_q_normalized = nn.functional.normalize(local_q, p=2.0, dim=-1)
 
     # Replace testing inputs
-    fixed = 18
-    num_clue = 1
+    fixed = 0
 
     global_pos, global_q = skeleton_mocap.forward_kinematics_with_rotation(local_q_normalized, root_pos)
 
-    global_pos[:,fixed] += torch.Tensor([0,35,0]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
+    global_pos[:,fixed] += torch.Tensor([0,0,0]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
 
     if ckpt['preserve_link_train']:
         print("USE BONE LENGTH NORMALIZATION...")
@@ -86,35 +86,39 @@ def test(opt, device):
     else:
         global_pose_vec_gt = vectorize_representation(global_pos, global_q)
         global_pose_vec_input = global_pose_vec_gt.clone().detach()
-        pose_interpolated_input = lerp_input_repr(global_pose_vec_input, fixed)
+        pose_interpolated_input = replace_noise(global_pose_vec_input, fixed)
         input_pos = pose_interpolated_input[:,:,:pos_dim]
     
-
-    infilling_code = np.zeros((1, horizon))
-    infilling_code[0, 1:fixed] = 1
-    infilling_code[0, fixed+1:-1] = 1
-    infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
-
     pose_vectorized_input = pose_interpolated_input.permute(1,0,2)
 
     src_mask = torch.zeros((horizon, horizon), device=device).type(torch.bool)
     src_mask = src_mask.to(device)
 
+    seq_categories = [x[:-1] for x in lafan_dataset.data['seq_names']]
+
+    le = LabelEncoder()
+    le.classes_ = np.load(os.path.join(save_dir, 'le_classes_.npy'))
+
+    target_seq = opt.motion_type
+    seq_id = np.where(le.classes_==target_seq)[0]
+    conditioning_labels = np.expand_dims((np.repeat(seq_id[0], repeats=len(seq_categories))), axis=1)
+    conditioning_labels = torch.Tensor(conditioning_labels).type(torch.int64).to(device)
+
     model = TransformerModel(seq_len=ckpt['horizon'], d_model=ckpt['d_model'], nhead=ckpt['nhead'], d_hid=ckpt['d_hid'], nlayers=ckpt['nlayers'], dropout=0.0, out_dim=repr_dim)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
-    output = model(pose_vectorized_input, src_mask, infilling_code)
+    output, cond_pred = model(pose_vectorized_input, src_mask, conditioning_labels)
 
     if ckpt['preserve_link_train']:
-        pred_global_pos = output[:,:,:pos_dim].permute(1,0,2)
+        pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2)
         pred_global_pos = skeleton_mocap.convert_to_global_pos(pred_global_pos)
 
         clue = global_pos.clone().detach().reshape(global_pos.size(0), global_pos.size(1), -1)
         clue = skeleton_mocap.convert_to_global_pos(clue)
 
     else:
-        pred_global_pos = output[:,:,:pos_dim].permute(1,0,2).reshape(4474,32,22,3)
+        pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(4474,horizon-1,22,3)
         global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
         pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec)
         clue = global_pos.clone().detach()
@@ -131,7 +135,7 @@ def test(opt, device):
         gt_stopover_pose = lafan_dataset.data['global_pos'][test_idx[i], from_idx + fixed]
 
         img_aggr_list = []
-        for t in range(horizon):
+        for t in range(horizon-1):
             
             input_img_path = os.path.join(save_path, 'input')
             plot_pose_with_stop(start_pose, input_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3).detach().numpy(), target_pose, stopover_pose, t, skeleton_mocap, save_dir=input_img_path, prefix='input')
@@ -154,12 +158,12 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='Link-Preserving_wQUAT', help='experiment name')
+    parser.add_argument('--exp_name', default='ctrl_condition_rnd_msk_long_hor', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
-    parser.add_argument('--motion_type', type=str, default='walk', help='motion type')
+    parser.add_argument('--motion_type', type=str, default='jumps', help='motion type')
     opt = parser.parse_args()
     return opt
 

@@ -7,15 +7,19 @@ import torch
 import torch.nn as nn
 import yaml
 from torch.optim import Adam
+from sklearn.preprocessing import LabelEncoder
+
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
+
+from sklearn.preprocessing import LabelEncoder
 
 import wandb
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import (lerp_input_repr, lerp_reshaped,
+from rmi.model.preprocess import (lerp_input_repr, lerp_reshaped, replace_noise,
                                   vectorize_representation)
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
@@ -56,6 +60,8 @@ def train(opt, device):
     from_idx, target_idx = opt.from_idx, opt.target_idx  # default: 9-40, max: 48
     horizon = target_idx - from_idx + 1
     print(f"Horizon: {horizon}")
+    horizon += 1
+    print(f"Horizon with Conditioning: {horizon}")
 
     root_pos = torch.Tensor(lafan_dataset.data['root_p'][:, from_idx:target_idx+1]).to(device)
     local_q = torch.Tensor(lafan_dataset.data['local_q'][:, from_idx:target_idx+1]).to(device)
@@ -75,7 +81,14 @@ def train(opt, device):
         global_pose_vec_gt = vectorize_representation(global_pos, global_q)
     global_pose_vec_input = global_pose_vec_gt.clone().detach()
 
-    tensor_dataset = TensorDataset(global_pose_vec_input, global_pose_vec_gt)
+    seq_categories = [x[:-1] for x in lafan_dataset.data['seq_names']]
+
+    le = LabelEncoder()
+    le_np = le.fit_transform(seq_categories)
+    seq_labels = torch.Tensor(le_np).type(torch.int64).unsqueeze(1).to(device)
+    np.save(f'{save_dir}/le_classes_.npy', le.classes_)
+
+    tensor_dataset = TensorDataset(global_pose_vec_input, global_pose_vec_gt, seq_labels)
     lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
 
     pos_dim = lafan_dataset.num_joints * 3
@@ -94,20 +107,16 @@ def train(opt, device):
 
         pbar = tqdm(lafan_data_loader, position=1, desc="Batch")
 
+        recon_cond_loss = []
         recon_pos_loss = []
         recon_rot_loss = []
         total_loss_list = []
 
-        for minibatch_pose_input, minibatch_pose_gt in pbar:
-
-            cur_batch_size = minibatch_pose_input.size(0)
-            seq_len = minibatch_pose_input.size(1)
-            feature_dims = minibatch_pose_input.size(2)
-
-            num_clue = 1
+        for minibatch_pose_input, minibatch_pose_gt, seq_label in pbar:
 
             for _ in range(5):
-                mask_start_frame = np.random.randint(0, horizon)
+                mask_start_frame = np.random.randint(0, horizon-1)
+                # mask_start_frame = 0
 
                 if opt.preserve_link_train:
                     root_pos = minibatch_pose_input[:,:,:3]
@@ -118,34 +127,32 @@ def train(opt, device):
                     rot_lerped = lerp_reshaped(rot_vec, mask_start_frame, 22)
                     pose_interpolated_input = torch.cat([root_lerped, link_lerped, rot_lerped], dim=2)
                 else:
-                    pose_interpolated_input = lerp_input_repr(minibatch_pose_input, mask_start_frame)
-    
-                ## MAKE INFILLING CODE HERE ##
-                infilling_code = np.zeros((1, horizon))
-                infilling_code[0, 1:mask_start_frame] = 1
-                infilling_code[0, mask_start_frame+num_clue:-1] = 1
-                infilling_code = torch.tensor(infilling_code, dtype=torch.int, device=device)
-                ##############################
+                    pose_interpolated_input = replace_noise(minibatch_pose_input, mask_start_frame)
 
                 pose_interpolated_input = pose_interpolated_input.permute(1,0,2)
 
-                src_mask = torch.zeros((seq_len, seq_len), device=device).type(torch.bool)
+                src_mask = torch.zeros((horizon, horizon), device=device).type(torch.bool)
                 src_mask = src_mask.to(device)
                 
-                output = transformer_encoder(pose_interpolated_input, src_mask, infilling_code)
+                output, cond_gt = transformer_encoder(pose_interpolated_input, src_mask, seq_label)
 
-                pos_pred = output[:,:,:pos_dim].permute(1,0,2)
+                cond_pred = output[0:1, :, :]
+                cond_loss = l1_loss(cond_pred, cond_gt)
+                recon_cond_loss.append(opt.loss_cond_weight * cond_loss)
+
+                pos_pred = output[1:,:,:pos_dim].permute(1,0,2)
                 pos_gt = minibatch_pose_gt[:,:,:pos_dim]
                 pos_loss = l1_loss(pos_pred, pos_gt)
                 recon_pos_loss.append(opt.loss_pos_weight * pos_loss)
 
-                rot_pred = output[:,:,pos_dim:].permute(1,0,2)
+                rot_pred = output[1:,:,pos_dim:].permute(1,0,2)
                 rot_gt = minibatch_pose_gt[:,:,pos_dim:]
                 rot_loss = l1_loss(rot_pred, rot_gt)
                 recon_rot_loss.append(opt.loss_rot_weight * rot_loss)
 
                 total_g_loss = opt.loss_pos_weight * pos_loss + \
-                                opt.loss_rot_weight * rot_loss
+                                opt.loss_rot_weight * rot_loss + \
+                                opt.loss_cond_weight * cond_loss
 
                 total_loss_list.append(total_g_loss)
             
@@ -158,6 +165,7 @@ def train(opt, device):
 
         # Log
         log_dict = {
+            "Train/Loss/Condition Loss": torch.stack(recon_cond_loss).mean().item(), 
             "Train/Loss/Position Loss": torch.stack(recon_pos_loss).mean().item(), 
             "Train/Loss/Rotatation Loss": torch.stack(recon_rot_loss).mean().item(),
             "Train/Loss/Total Loss": torch.stack(total_loss_list).mean().item(),
@@ -196,13 +204,14 @@ def parse_opt():
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or -1 or cpu')
+    parser.add_argument('--device', default='1', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=1, help='Log model after every "save_period" epoch')
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='generator_learning_rate')
     parser.add_argument('--optim_beta1', type=float, default=0.9, help='optim_beta1')
     parser.add_argument('--optim_beta2', type=float, default=0.99, help='optim_beta2')
+    parser.add_argument('--loss_cond_weight', type=float, default=1.0, help='loss_cond_weight')
     parser.add_argument('--loss_pos_weight', type=float, default=1.0, help='loss_pos_weight')
     parser.add_argument('--loss_rot_weight', type=float, default=1.0, help='loss_rot_weight')
     parser.add_argument('--from_idx', type=int, default=9, help='from idx')
