@@ -6,11 +6,10 @@ import pickle
 import os 
 
 class LAFAN1Dataset(Dataset):
-    def __init__(self, lafan_path: str, processed_data_dir : str, train: bool, device: str, target_action: list):
+    def __init__(self, lafan_path: str, processed_data_dir : str, train: bool, device: str):
         self.lafan_path = lafan_path
 
         self.train = train
-        self.target_action = target_action
         # 4.3: It contains actions performedby 5 subjects, with Subject 5 used as the test set.
         self.actors = (
             ["subject1", "subject2", "subject3", "subject4"] if train else ["subject5"]
@@ -56,7 +55,7 @@ class LAFAN1Dataset(Dataset):
         # X and Q are local position/quaternion. Motions are rotated to make 10th frame facing X+ position.
         # Refer to paper 3.1 Data formatting
         X, Q, parents, contacts_l, contacts_r, seq_names = extract.get_lafan1_set(
-            self.lafan_path, self.actors, self.target_action, self.window, self.offset
+            self.lafan_path, self.actors, self.window, self.offset
         )
 
         # Retrieve global representations. (global quaternion, global positions)
