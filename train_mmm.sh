@@ -4,7 +4,7 @@ python train_mmm.py \
 	--epochs=10000 \
 	--device=1 \
 	--entity=rilab-motion \
-	--exp_name="ctrl_condition_rnd_msk_long_hor" \
+	--exp_name="slerp_40_horizon" \
 	--save_interval=50 \
 	--learning_rate=0.0001 \
 	--optim_beta1=0.9 \
