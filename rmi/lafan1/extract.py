@@ -168,7 +168,7 @@ def read_bvh(filename, start=None, end=None, order=None):
     return Anim(rotations, positions, offsets, parents, names)
 
 
-def get_lafan1_set(bvh_path, actors, action_name, window=50, offset=20):
+def get_lafan1_set(bvh_path, actors, window=50, offset=20):
     """
     Extract the same test set as in the article, given the location of the BVH files.
 
@@ -192,7 +192,7 @@ def get_lafan1_set(bvh_path, actors, action_name, window=50, offset=20):
     contacts_r = []
 
     # Extract
-    bvh_files = os.listdir(bvh_path)
+    bvh_files = sorted(os.listdir(bvh_path))
 
     for file in bvh_files:
         if file.endswith(".bvh"):
@@ -200,51 +200,37 @@ def get_lafan1_set(bvh_path, actors, action_name, window=50, offset=20):
             seq_name = file_info[0]
             subject = file_info[1]
             # seq_name, subject = ntpath.basename(file[:-4]).split("_")
-            for action in action_name :
-               if action in seq_name or action == '':
-                    if subject in actors:
-                        print("Processing file {}".format(file))
-                        seq_path = os.path.join(bvh_path, file)
-                        anim = read_bvh(seq_path)
+            if subject in actors:
+                print('Processing file {}'.format(file))
+                seq_path = os.path.join(bvh_path, file)
+                anim = read_bvh(seq_path)
 
-                        # Sliding windows
-                        i = 0
-                        while i + window < anim.pos.shape[0]:
-                            q, x = utils.quat_fk(
-                                anim.quats[i : i + window],
-                                anim.pos[i : i + window],
-                                anim.parents,
-                            )
-                            # Extract contacts
-                            c_l, c_r = utils.extract_feet_contacts(
-                                x, [3, 4], [7, 8], velfactor=0.02
-                            )
-                            X.append(anim.pos[i : i + window])
-                            Q.append(anim.quats[i : i + window])
-                            seq_names.append(seq_name)
-                            subjects.append(subjects)
-                            contacts_l.append(c_l)
-                            contacts_r.append(c_r)
+                # Sliding windows
+                i = 0
+                while i+window < anim.pos.shape[0]:
+                    q, x = utils.quat_fk(anim.quats[i: i+window], anim.pos[i: i+window], anim.parents)
+                    # Extract contacts
+                    c_l, c_r = utils.extract_feet_contacts(x, [3, 4], [7, 8], velfactor=0.02)
+                    X.append(anim.pos[i: i+window])
+                    Q.append(anim.quats[i: i+window])
+                    seq_names.append(seq_name)
+                    subjects.append(subjects)
+                    contacts_l.append(c_l)
+                    contacts_r.append(c_r)
 
-                            i += offset
+                    i += offset
 
     X = np.asarray(X)
     Q = np.asarray(Q)
     contacts_l = np.asarray(contacts_l)
     contacts_r = np.asarray(contacts_r)
 
-    # Sequences around XZ = 0. Y is upside direction
-    xzs = np.mean(
-        X[:, :, 0, ::2], axis=1, keepdims=True
-    )  # Select XZ axis on sequences tand take mean by seqeunce direction.: (Batch, Seq, 2) -> (Batch, 1, 2)
-    X[:, :, 0, 0] = (
-        X[:, :, 0, 0] - xzs[..., 0]
-    )  # Every root's x position will be aligned to mean. (Batch, Sequence) - (Batch, 1). Middle of the sequence will be around at 0.
-    X[:, :, 0, 2] = (
-        X[:, :, 0, 2] - xzs[..., 1]
-    )  # Every root's z position will be aligned to mean. (Batch, Sequence) - (Batch, 1). Middle of the sequence will be around at 0.
+    # Sequences around XZ = 0
+    xzs = np.mean(X[:, :, 0, ::2], axis=1, keepdims=True)
+    X[:, :, 0, 0] = X[:, :, 0, 0] - xzs[..., 0]
+    X[:, :, 0, 2] = X[:, :, 0, 2] - xzs[..., 1]
 
-    # Unify facing on last seed frame (default: 10th frame)
+    # Unify facing on last seed frame
     X, Q = utils.rotate_at_frame(X, Q, anim.parents, n_past=npast)
 
     return X, Q, anim.parents, contacts_l, contacts_r, seq_names
@@ -255,12 +241,10 @@ def get_train_stats(bvh_folder, train_set):
     Extract the same training set as in the paper in order to compute the normalizing statistics
     :return: Tuple of (local position mean vector, local position standard deviation vector, local joint offsets tensor)
     """
-    print("Building the train set...")
-    xtrain, qtrain, parents, _, _ = get_lafan1_set(
-        bvh_folder, train_set, action_name='', window=50, offset=20
-    )
+    print('Building the train set...')
+    xtrain, qtrain, parents, _, _ = get_lafan1_set(bvh_folder, train_set, window=50, offset=20)
 
-    print("Computing stats...\n")
+    print('Computing stats...\n')
     # Joint offsets : are constant, so just take the first frame:
     offsets = xtrain[0:1, 0:1, 1:, :]  # Shape : (1, 1, J, 3)
 
@@ -268,15 +252,7 @@ def get_train_stats(bvh_folder, train_set):
     q_glbl, x_glbl = utils.quat_fk(qtrain, xtrain, parents)
 
     # Global positions stats:
-    x_mean = np.mean(
-        x_glbl.reshape([x_glbl.shape[0], x_glbl.shape[1], -1]).transpose([0, 2, 1]),
-        axis=(0, 2),
-        keepdims=True,
-    )
-    x_std = np.std(
-        x_glbl.reshape([x_glbl.shape[0], x_glbl.shape[1], -1]).transpose([0, 2, 1]),
-        axis=(0, 2),
-        keepdims=True,
-    )
+    x_mean = np.mean(x_glbl.reshape([x_glbl.shape[0], x_glbl.shape[1], -1]).transpose([0, 2, 1]), axis=(0, 2), keepdims=True)
+    x_std = np.std(x_glbl.reshape([x_glbl.shape[0], x_glbl.shape[1], -1]).transpose([0, 2, 1]), axis=(0, 2), keepdims=True)
 
     return x_mean, x_std, offsets
