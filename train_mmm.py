@@ -124,6 +124,12 @@ def train(opt, device):
                     pose_interpolated_input = torch.cat([root_lerped, link_lerped, rot_lerped], dim=2)
                 else:
                     # TODO: LERP for root, SLERP for quat
+                    root_vec = minibatch_pose_input[:,:,:pos_dim]
+                    rot_vec = minibatch_pose_input[:,:,pos_dim:]
+
+                    root_lerped = lerp_input_repr(root_vec, mask_start_frame)
+                    rot_slerped = slerp_input_repr(rot_vec, mask_start_frame)
+
                     pose_interpolated_input = replace_noise(minibatch_pose_input, mask_start_frame)
 
                 pose_interpolated_input = pose_interpolated_input.permute(1,0,2)
@@ -187,7 +193,7 @@ def train(opt, device):
                     'preserve_link_train': opt.preserve_link_train,
                     'loss': total_g_loss}
             torch.save(ckpt, os.path.join(wdir, f'train-{epoch}.pt'))
-            print(f"{epoch} Epoch: model weights saved")
+            print(f"[MODEL SAVED at {epoch} Epoch]")
 
     wandb.run.finish()
     torch.cuda.empty_cache()
