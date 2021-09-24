@@ -6,21 +6,18 @@ import numpy as np
 import torch
 import torch.nn as nn
 import yaml
-from torch.optim import Adam
 from sklearn.preprocessing import LabelEncoder
-
+from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
-
-from sklearn.preprocessing import LabelEncoder
 
 import wandb
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import (lerp_input_repr, lerp_reshaped, replace_noise,
-                                  vectorize_representation)
+from rmi.model.preprocess import (lerp_input_repr, lerp_reshaped,
+                                  replace_noise, vectorize_representation)
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
 from utils.general import increment_path
@@ -36,10 +33,9 @@ def train(opt, device):
     # Save run settings
     with open(save_dir / 'opt.yaml', 'w') as f:
         yaml.safe_dump(vars(opt), f, sort_keys=True)
-    save_interval = opt.save_interval
 
-    # Set device to use
     epochs = opt.epochs
+    save_interval = opt.save_interval
                           
     # Loggers
     summary_writer = SummaryWriter(str(save_dir))
@@ -50,17 +46,17 @@ def train(opt, device):
     skeleton_mocap.remove_joints(sk_joints_to_remove)
 
     # Flip, Load and preprocess data. It utilizes LAFAN1 utilities
-    flip_bvh(opt.data_path)
+    flip_bvh(opt.data_path, skip='subject5')
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, target_action=[''], device=device)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, device=device)
     
     # Replace to noise for inbetweening frames
-    from_idx, target_idx = opt.from_idx, opt.target_idx  # default: 9-40, max: 48
+    from_idx, target_idx = opt.from_idx, opt.target_idx  # default: 9-38 (30 frames), max: 48
     horizon = target_idx - from_idx + 1
     print(f"Horizon: {horizon}")
-    horizon += 1
+    horizon += 1 # Add one for conditioning token
     print(f"Horizon with Conditioning: {horizon}")
 
     root_pos = torch.Tensor(lafan_dataset.data['root_p'][:, from_idx:target_idx+1]).to(device)
@@ -96,7 +92,7 @@ def train(opt, device):
     repr_dim = pos_dim + rot_dim
     nhead = 7 # repr_dim = 154
 
-    transformer_encoder = TransformerModel(seq_len=horizon, d_model=repr_dim, nhead=nhead, d_hid=1024, nlayers=8, dropout=0.05, out_dim=repr_dim)
+    transformer_encoder = TransformerModel(seq_len=horizon, d_model=repr_dim, nhead=nhead, d_hid=2048, nlayers=8, dropout=0.05, out_dim=repr_dim)
     transformer_encoder.to(device)
 
     l1_loss = nn.L1Loss()
@@ -127,6 +123,7 @@ def train(opt, device):
                     rot_lerped = lerp_reshaped(rot_vec, mask_start_frame, 22)
                     pose_interpolated_input = torch.cat([root_lerped, link_lerped, rot_lerped], dim=2)
                 else:
+                    # TODO: LERP for root, SLERP for quat
                     pose_interpolated_input = replace_noise(minibatch_pose_input, mask_start_frame)
 
                 pose_interpolated_input = pose_interpolated_input.permute(1,0,2)
@@ -215,7 +212,7 @@ def parse_opt():
     parser.add_argument('--loss_pos_weight', type=float, default=1.0, help='loss_pos_weight')
     parser.add_argument('--loss_rot_weight', type=float, default=1.0, help='loss_rot_weight')
     parser.add_argument('--from_idx', type=int, default=9, help='from idx')
-    parser.add_argument('--target_idx', type=int, default=40, help='target idx')
+    parser.add_argument('--target_idx', type=int, default=38, help='target idx')
     parser.add_argument('--preserve_link_train', action='store_true', help='use bone length to maintain link length')
     opt = parser.parse_args()
     return opt
