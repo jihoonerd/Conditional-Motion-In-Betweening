@@ -49,18 +49,23 @@ def write_json(filename, local_q, root_pos, joint_names):
         json.dump(json_out, outfile)
 
 
-def flip_bvh(bvh_folder: str):
+def flip_bvh(bvh_folder: str, skip: str):
     """
     Generate LR flip of existing bvh files. Assumes Z-forward.
+    It does not flip files contains skip string in their name.
     """
 
     print("Left-Right Flipping Process...")
 
     # List files which are not flipped yet
     to_convert = []
+    not_convert = []
     bvh_files = os.listdir(bvh_folder)
     for bvh_file in bvh_files:
         if '_LRflip.bvh' in bvh_file:
+            continue
+        if skip in bvh_file:
+            not_convert.append(bvh_file)
             continue
         flipped_file = bvh_file.replace('.bvh', '_LRflip.bvh')
         if flipped_file in bvh_files:
@@ -70,6 +75,8 @@ def flip_bvh(bvh_folder: str):
     
     print("Following files will be flipped: ")
     print(to_convert)
+    print("Following files are not flipped: ")
+    print(not_convert)
 
     for i, converting_fn in enumerate(to_convert):
         fout = open(os.path.join(bvh_folder, converting_fn.replace('.bvh', '_LRflip.bvh')), 'w')
