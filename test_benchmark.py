@@ -1,7 +1,7 @@
 import argparse
 import os
 from pathlib import Path
-
+import pickle
 import imageio
 import numpy as np
 import torch
@@ -16,6 +16,10 @@ from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
 from rmi.vis.pose import plot_pose_with_stop
 from sklearn.preprocessing import LabelEncoder
+from rmi.lafan1 import extract
+
+
+
 
 def test(opt, device):
 
@@ -38,7 +42,31 @@ def test(opt, device):
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, target_action=[''], device=device)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, device=device)
+
+    # Extract stats
+    train_actors = ['subject1', 'subject2', 'subject3', 'subject4']
+    bvh_folder = os.path.join('ubisoft-laforge-animation-dataset', 'output', 'BVH')
+    stats_file = os.path.join(opt.processed_data_dir, 'train_stats.pkl')
+
+    if not os.path.exists(stats_file):
+        x_mean, x_std, offsets = extract.get_train_stats(bvh_folder, train_actors)
+        with open(stats_file, 'wb') as f:
+            pickle.dump({
+                'x_mean': x_mean,
+                'x_std': x_std,
+                'offsets': offsets,
+            }, f, protocol=pickle.HIGHEST_PROTOCOL)
+    else:
+        print('Reusing stats file: ' + stats_file)
+        with open(stats_file, 'rb') as f:
+            stats = pickle.load(f)
+        x_mean = stats['x_mean']
+        x_std = stats['x_std']
+        offsets = stats['offsets']
+
+
+    total_data = lafan_dataset.data['global_pos'].shape[0]
     
     # Replace with noise to In-betweening Frames
     from_idx, target_idx = ckpt['from_idx'], ckpt['target_idx'] # default: 9-40, max: 48
@@ -46,8 +74,8 @@ def test(opt, device):
     print(f"HORIZON: {horizon}")
 
     test_idx = []
-    for i in range(1, 10):
-        test_idx.append(i * 125)
+    for i in range(total_data):
+        test_idx.append(i)
 
     # Extract dimension from processed data
     pos_dim = lafan_dataset.num_joints * 3
@@ -95,6 +123,9 @@ def test(opt, device):
 
     seq_categories = [x[:-1] for x in lafan_dataset.data['seq_names']]
 
+    l1_loss = nn.L1Loss()
+    mse_loss = nn.MSELoss()
+
     le = LabelEncoder()
     le.classes_ = np.load(os.path.join(save_dir, 'le_classes_.npy'))
 
@@ -107,26 +138,39 @@ def test(opt, device):
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
-    output, cond_pred = model(pose_vectorized_input, src_mask, conditioning_labels)
 
-    if ckpt['preserve_link_train']:
-        pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2)
-        pred_global_pos = skeleton_mocap.convert_to_global_pos(pred_global_pos)
-
-        clue = global_pos.clone().detach().reshape(global_pos.size(0), global_pos.size(1), -1)
-        clue = skeleton_mocap.convert_to_global_pos(clue)
-
-    else:
-        pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(4474,horizon-1,22,3)
-        global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
-        pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec)
-        clue = global_pos.clone().detach()
-        
-
-    # Compare Input data, Prediction, GT
+    l2p = []
+    l2q = []
     for i in range(len(test_idx)):
-        save_path = os.path.join(opt.save_path, 'test_' + f'{test_idx[i]}')
-        Path(save_path).mkdir(parents=True, exist_ok=True)
+        print(f"Processing ID: {test_idx[i]}")
+        cond_prob = []
+        outputs = []
+        for class_id in range(len(le.classes_)):
+            conditioning_label = torch.Tensor([[class_id]]).type(torch.int64).to(device)
+            cond_output, cond_gt = model(pose_vectorized_input[:, test_idx[i]:test_idx[i]+1, :], src_mask, conditioning_label)
+            cond_pred = cond_output[0:1, :, :]
+            cond_loss = l1_loss(cond_pred, cond_gt)
+            outputs.append(cond_output)
+            cond_prob.append(cond_loss.item())
+        matching_condition = np.argmin(cond_prob)
+        print(f"Matching Condition: {le.classes_[matching_condition]}")
+        # continue
+        output = outputs[matching_condition]
+
+        if ckpt['preserve_link_train']:
+            pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2)
+            pred_global_pos = skeleton_mocap.convert_to_global_pos(pred_global_pos).detach().numpy()
+
+            clue = global_pos.clone().detach().reshape(global_pos.size(0), global_pos.size(1), -1)
+            clue = skeleton_mocap.convert_to_global_pos(clue)
+
+        else:
+            pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(1,horizon-1,22,3)
+            global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
+            pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec).detach().numpy()
+
+            pred_global_rot = output[1:,:,pos_dim:].permute(1,0,2).reshape(1,horizon-1,22,4)
+            clue = global_pos.clone().detach()
 
         start_pose =  lafan_dataset.data['global_pos'][test_idx[i], from_idx]
         target_pose = lafan_dataset.data['global_pos'][test_idx[i], target_idx]
@@ -134,25 +178,46 @@ def test(opt, device):
         gt_stopover_pose = lafan_dataset.data['global_pos'][test_idx[i], from_idx + fixed]
 
         img_aggr_list = []
-        for t in range(horizon-1):
-            
-            input_img_path = os.path.join(save_path, 'input')
-            plot_pose_with_stop(start_pose, input_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3).detach().numpy(), target_pose, stopover_pose, t, skeleton_mocap, save_dir=input_img_path, prefix='input')
-            pred_img_path = os.path.join(save_path, 'pred_img')
-            plot_pose_with_stop(start_pose, pred_global_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3).detach().numpy(), target_pose, stopover_pose, t, skeleton_mocap, save_dir=pred_img_path, prefix='pred')
-            gt_img_path = os.path.join(save_path, 'gt_img')
-            plot_pose_with_stop(start_pose, lafan_dataset.data['global_pos'][test_idx[i], t+from_idx], target_pose, gt_stopover_pose, t, skeleton_mocap, save_dir=gt_img_path, prefix='gt')
 
-            input_img = Image.open(os.path.join(input_img_path, 'input'+str(t)+'.png'), 'r')
-            pred_img = Image.open(os.path.join(pred_img_path, 'pred'+str(t)+'.png'), 'r')
-            gt_img = Image.open(os.path.join(gt_img_path, 'gt'+str(t)+'.png'), 'r')
-            
-            img_aggr_list.append(np.concatenate([input_img, pred_img, gt_img.resize(pred_img.size)], 1))
+        if False:
 
-        # Save images
-        gif_path = os.path.join(save_path, f'img_{test_idx[i]}.gif')
-        imageio.mimsave(gif_path, img_aggr_list, duration=0.1)
+            save_path = os.path.join(opt.save_path, 'test_' + f'{test_idx[i]}')
+            Path(save_path).mkdir(parents=True, exist_ok=True)
+
+            for t in range(horizon-1):
+                
+                input_img_path = os.path.join(save_path, 'input')
+                pred_img_path = os.path.join(save_path, 'pred_img')
+                gt_img_path = os.path.join(save_path, 'gt_img')
+                
+                plot_pose_with_stop(start_pose, input_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3).detach().numpy(), target_pose, stopover_pose, t, skeleton_mocap, save_dir=input_img_path, prefix='input')
+                plot_pose_with_stop(start_pose, pred_global_pos[0,t].reshape(lafan_dataset.num_joints, 3), target_pose, stopover_pose, t, skeleton_mocap, save_dir=pred_img_path, prefix='pred')
+                plot_pose_with_stop(start_pose, lafan_dataset.data['global_pos'][test_idx[i], t+from_idx], target_pose, gt_stopover_pose, t, skeleton_mocap, save_dir=gt_img_path, prefix='gt')
+
+                input_img = Image.open(os.path.join(input_img_path, 'input'+str(t)+'.png'), 'r')
+                pred_img = Image.open(os.path.join(pred_img_path, 'pred'+str(t)+'.png'), 'r')
+                gt_img = Image.open(os.path.join(gt_img_path, 'gt'+str(t)+'.png'), 'r')
+                
+                img_aggr_list.append(np.concatenate([input_img, pred_img, gt_img.resize(pred_img.size)], 1))
+
+                # Save images
+                gif_path = os.path.join(save_path, f'img_{test_idx[i]}.gif')
+                imageio.mimsave(gif_path, img_aggr_list, duration=0.1)
+
+        # Normalize for L2P
+        normalized_gt_pos = torch.Tensor((lafan_dataset.data['global_pos'][test_idx[i]:test_idx[i]+1, from_idx:target_idx+1].reshape(1, -1, lafan_dataset.num_joints * 3).transpose(0,2,1) - x_mean) / x_std)
+        normalized_pred_pos = torch.Tensor((pred_global_pos.reshape(1, -1, lafan_dataset.num_joints * 3).transpose(0,2,1) - x_mean) / x_std)
+
+        l2p.append(torch.mean(torch.norm(normalized_pred_pos[0] - normalized_gt_pos[0], dim=(0))).item())
+        l2q.append(torch.mean(torch.norm(pred_global_rot[0] - global_q[test_idx[i]], dim=(1,2))).item())
         print(f"ID {test_idx[i]}: test completed.")
+    
+    l2p_mean = np.mean(l2p)
+    l2q_mean = np.mean(l2q)
+
+    print(f"TOTAL TEST DATA: {len(l2p)}")
+    print(f"L2P: {l2p_mean}")
+    print(f"L2Q: {l2q_mean}")
 
 def parse_opt():
     parser = argparse.ArgumentParser()
@@ -162,7 +227,7 @@ def parse_opt():
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
-    parser.add_argument('--motion_type', type=str, default='walk', help='motion type')
+    parser.add_argument('--motion_type', type=str, default='jumps', help='motion type')
     opt = parser.parse_args()
     return opt
 
