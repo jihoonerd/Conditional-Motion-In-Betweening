@@ -29,11 +29,6 @@ def test(opt, device):
     ckpt = torch.load(latest_weight, map_location=device)
     print(f"Loaded weight: {latest_weight}")
 
-    if ckpt['preserve_link_train']:
-        print("Link Preserving: Training")
-    else:
-        print("Link Prserving: Post Processing")
-
     # Load Skeleton
     skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
     skeleton_mocap.remove_joints(sk_joints_to_remove)
@@ -73,7 +68,7 @@ def test(opt, device):
 
     test_idx = []
     for i in range(total_data):
-        test_idx.append(200*i)
+        test_idx.append(i)
 
     # Extract dimension from processed data
     pos_dim = lafan_dataset.num_joints * 3
@@ -121,11 +116,6 @@ def test(opt, device):
     le = LabelEncoder()
     le.classes_ = np.load(os.path.join(save_dir, 'le_classes_.npy'))
 
-    target_seq = opt.motion_type
-    seq_id = np.where(le.classes_==target_seq)[0]
-    conditioning_labels = np.expand_dims((np.repeat(seq_id[0], repeats=len(seq_categories))), axis=1)
-    conditioning_labels = torch.Tensor(conditioning_labels).type(torch.int64).to(device)
-
     model = TransformerModel(seq_len=ckpt['horizon'], d_model=ckpt['d_model'], nhead=ckpt['nhead'], d_hid=ckpt['d_hid'], nlayers=ckpt['nlayers'], dropout=0.0, out_dim=repr_dim)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
@@ -171,7 +161,7 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='slerp_30_horizon', help='experiment name')
+    parser.add_argument('--exp_name', default='constant_30', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')

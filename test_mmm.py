@@ -27,18 +27,13 @@ def test(opt, device):
     ckpt = torch.load(latest_weight, map_location=device)
     print(f"Loaded weight: {latest_weight}")
 
-    if ckpt['preserve_link_train']:
-        print("Link Preserving: Training")
-    else:
-        print("Link Prserving: Post Processing")
-
     # Load Skeleton
     skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
     skeleton_mocap.remove_joints(sk_joints_to_remove)
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, target_action=[''], device=device)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, device=device)
     total_data = lafan_dataset.data['global_pos'].shape[0]
     
     # Replace with noise to In-betweening Frames
@@ -145,12 +140,12 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='ctrl_condition_rnd_msk_long_hor', help='experiment name')
+    parser.add_argument('--exp_name', default='constant_30', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
-    parser.add_argument('--motion_type', type=str, default='walk', help='motion type')
+    parser.add_argument('--motion_type', type=str, default='jumps', help='motion type')
     opt = parser.parse_args()
     return opt
 
