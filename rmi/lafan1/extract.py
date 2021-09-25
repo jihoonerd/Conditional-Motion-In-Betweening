@@ -242,7 +242,7 @@ def get_train_stats(bvh_folder, train_set):
     :return: Tuple of (local position mean vector, local position standard deviation vector, local joint offsets tensor)
     """
     print('Building the train set...')
-    xtrain, qtrain, parents, _, _ = get_lafan1_set(bvh_folder, train_set, window=50, offset=20)
+    xtrain, qtrain, parents, _, _, _ = get_lafan1_set(bvh_folder, train_set, window=50, offset=20)
 
     print('Computing stats...\n')
     # Joint offsets : are constant, so just take the first frame:
