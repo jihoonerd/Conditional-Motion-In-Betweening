@@ -16,8 +16,10 @@ import wandb
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.data.utils import flip_bvh
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import lerp_input_repr, lerp_reshaped, slerp_input_repr, vectorize_representation
-from rmi.model.skeleton import Skeleton, sk_joints_to_remove, sk_offsets, sk_parents
+from rmi.model.preprocess import (lerp_input_repr, replace_constant,
+                                  slerp_input_repr, vectorize_representation)
+from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
+                                sk_parents)
 from utils.general import increment_path
 
 
@@ -56,23 +58,15 @@ def train(opt, device):
     print(f"Horizon: {horizon}")
     horizon += 1 # Add one for conditioning token
     print(f"Horizon with Conditioning: {horizon}")
+    print(f"Interpolation Mode: {opt.interpolation}")
 
     root_pos = torch.Tensor(lafan_dataset.data['root_p'][:, from_idx:target_idx+1]).to(device)
     local_q = torch.Tensor(lafan_dataset.data['local_q'][:, from_idx:target_idx+1]).to(device)
     local_q_normalized = nn.functional.normalize(local_q, p=2.0, dim=-1)
 
     global_pos, global_q = skeleton_mocap.forward_kinematics_with_rotation(local_q_normalized, root_pos)
-
-    if opt.preserve_link_train:
-        print("Link Preserving: Training")
-        print("USE BONE LENGTH NORMALIZATION...")
-        global_pos = skeleton_mocap.convert_to_unit_offset_mat(global_pos)
-        global_pose_vec_pos = global_pos.reshape(global_pos.size(0), global_pos.size(1), -1).contiguous()
-        global_pose_vec_rot = global_q.reshape(global_q.size(0), global_q.size(1), -1).contiguous()
-        global_pose_vec_gt = torch.cat([global_pose_vec_pos, global_pose_vec_rot], dim=2)
-    else:
-        print("Link Prserving: Post Processing")
-        global_pose_vec_gt = vectorize_representation(global_pos, global_q)
+    
+    global_pose_vec_gt = vectorize_representation(global_pos, global_q)
     global_pose_vec_input = global_pose_vec_gt.clone().detach()
 
     seq_categories = [x[:-1] for x in lafan_dataset.data['seq_names']]
@@ -111,22 +105,16 @@ def train(opt, device):
             for _ in range(5):
                 mask_start_frame = np.random.randint(0, horizon-1)
 
-                if opt.preserve_link_train:
-                    root_pos = minibatch_pose_input[:,:,:3]
-                    link_vec = minibatch_pose_input[:,:,3:pos_dim]
-                    rot_vec = minibatch_pose_input[:,:,pos_dim:]
-                    root_lerped = lerp_input_repr(root_pos, mask_start_frame)
-                    link_lerped = lerp_reshaped(link_vec, mask_start_frame, 21)
-                    rot_lerped = lerp_reshaped(rot_vec, mask_start_frame, 22)
-                    pose_interpolated_input = torch.cat([root_lerped, link_lerped, rot_lerped], dim=2)
-                else:
+                if opt.interpolation == 'constant':
+                    pose_interpolated_input = replace_constant(minibatch_pose_input, mask_start_frame)
+                elif opt.interpolation == 'slerp':
                     root_vec = minibatch_pose_input[:,:,:pos_dim]
                     rot_vec = minibatch_pose_input[:,:,pos_dim:]
-
                     root_lerped = lerp_input_repr(root_vec, mask_start_frame)
                     rot_slerped = slerp_input_repr(rot_vec, mask_start_frame)
-
                     pose_interpolated_input = torch.cat([root_lerped, rot_slerped], dim=2)
+                else:
+                    raise ValueError('Invalid interpolation method')
 
                 pose_interpolated_input = pose_interpolated_input.permute(1,0,2)
 
@@ -186,14 +174,13 @@ def train(opt, device):
                     'd_hid': transformer_encoder.d_hid,
                     'nlayers': transformer_encoder.nlayers,
                     'optimizer_state_dict': optim.state_dict(),
-                    'preserve_link_train': opt.preserve_link_train,
+                    'interpolation': opt.interpolation,
                     'loss': total_g_loss}
             torch.save(ckpt, os.path.join(wdir, f'train-{epoch}.pt'))
             print(f"[MODEL SAVED at {epoch} Epoch]")
 
     wandb.run.finish()
     torch.cuda.empty_cache()
-
 
 def parse_opt():
     parser = argparse.ArgumentParser()
@@ -215,10 +202,9 @@ def parse_opt():
     parser.add_argument('--loss_rot_weight', type=float, default=1.0, help='loss_rot_weight')
     parser.add_argument('--from_idx', type=int, default=9, help='from idx')
     parser.add_argument('--target_idx', type=int, default=38, help='target idx')
-    parser.add_argument('--preserve_link_train', action='store_true', help='use bone length to maintain link length')
+    parser.add_argument('--interpolation', type=str, default='slerp', help='interpolation')
     opt = parser.parse_args()
     return opt
-
 
 if __name__ == "__main__":
     opt = parse_opt()

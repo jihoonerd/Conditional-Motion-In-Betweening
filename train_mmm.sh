@@ -4,7 +4,7 @@ python train_mmm.py \
 	--epochs=10000 \
 	--device=1 \
 	--entity=rilab-motion \
-	--exp_name="slerp_40_horizon" \
+	--exp_name="slerp_40" \
 	--save_interval=50 \
 	--learning_rate=0.0001 \
 	--optim_beta1=0.9 \
@@ -13,5 +13,5 @@ python train_mmm.py \
 	--loss_pos_weight=0.03 \
 	--loss_rot_weight=1.0 \
 	--from_idx=9 \
-	--target_idx=48
-	# --preserve_link_train
+	--target_idx=48 \
+	--interpolation='slerp'

@@ -10,7 +10,7 @@ from PIL import Image
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import (lerp_input_repr, lerp_reshaped, replace_noise,
+from rmi.model.preprocess import (lerp_input_repr, slerp_input_repr, replace_constant,
                                   vectorize_representation)
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
@@ -39,6 +39,7 @@ def test(opt, device):
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
     lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, target_action=[''], device=device)
+    total_data = lafan_dataset.data['global_pos'].shape[0]
     
     # Replace with noise to In-betweening Frames
     from_idx, target_idx = ckpt['from_idx'], ckpt['target_idx'] # default: 9-40, max: 48
@@ -62,31 +63,27 @@ def test(opt, device):
     fixed = 0
 
     global_pos, global_q = skeleton_mocap.forward_kinematics_with_rotation(local_q_normalized, root_pos)
-
     global_pos[:,fixed] += torch.Tensor([0,0,0]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
 
-    if ckpt['preserve_link_train']:
-        print("USE BONE LENGTH NORMALIZATION...")
-        global_pos = skeleton_mocap.convert_to_unit_offset_mat(global_pos)
-        global_pose_vec_pos = global_pos.reshape(global_pos.size(0), global_pos.size(1), -1).contiguous()
-        global_pose_vec_rot = global_q.reshape(global_q.size(0), global_q.size(1), -1).contiguous()
-        global_pose_vec_gt = torch.cat([global_pose_vec_pos, global_pose_vec_rot], dim=2)
-        global_pose_vec_input = global_pose_vec_gt.clone().detach()
+    interpolation = ckpt['interpolation']
 
-        root_pos = global_pose_vec_input[:,:,:3]
-        link_vec = global_pose_vec_input[:,:,3:pos_dim]
-        rot_vec = global_pose_vec_input[:,:,pos_dim:]
-        root_lerped = lerp_input_repr(root_pos, fixed)
-        link_lerped = lerp_reshaped(link_vec, fixed, 21)
-        rot_lerped = lerp_reshaped(rot_vec, fixed, 22)
-        pose_interpolated_input = torch.cat([root_lerped, link_lerped, rot_lerped], dim=2)
-        input_pos = skeleton_mocap.convert_to_global_pos(pose_interpolated_input[:,:,:pos_dim])
-
-    else:
+    if interpolation == 'constant':
         global_pose_vec_gt = vectorize_representation(global_pos, global_q)
         global_pose_vec_input = global_pose_vec_gt.clone().detach()
-        pose_interpolated_input = replace_noise(global_pose_vec_input, fixed)
+        pose_interpolated_input = replace_constant(global_pose_vec_input, fixed)
         input_pos = pose_interpolated_input[:,:,:pos_dim]
+
+    elif interpolation == 'slerp':
+        global_pose_vec_gt = vectorize_representation(global_pos, global_q)
+        global_pose_vec_input = global_pose_vec_gt.clone().detach()
+        root_vec = global_pose_vec_input[:,:,:pos_dim]
+        rot_vec = global_pose_vec_input[:,:,pos_dim:]
+        root_lerped = lerp_input_repr(root_vec, fixed)
+        rot_slerped = slerp_input_repr(rot_vec, fixed)
+        pose_interpolated_input = torch.cat([root_lerped, rot_slerped], dim=2)
+
+    else:
+        raise ValueError('Invalid interpolation method')
     
     pose_vectorized_input = pose_interpolated_input.permute(1,0,2)
 
@@ -107,22 +104,13 @@ def test(opt, device):
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
-    output, cond_pred = model(pose_vectorized_input, src_mask, conditioning_labels)
+    output, _ = model(pose_vectorized_input, src_mask, conditioning_labels)
 
-    if ckpt['preserve_link_train']:
-        pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2)
-        pred_global_pos = skeleton_mocap.convert_to_global_pos(pred_global_pos)
-
-        clue = global_pos.clone().detach().reshape(global_pos.size(0), global_pos.size(1), -1)
-        clue = skeleton_mocap.convert_to_global_pos(clue)
-
-    else:
-        pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(4474,horizon-1,22,3)
-        global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
-        pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec)
-        clue = global_pos.clone().detach()
+    pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(total_data,horizon-1,22,3)
+    global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
+    pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec)
+    clue = global_pos.clone().detach()
         
-
     # Compare Input data, Prediction, GT
     for i in range(len(test_idx)):
         save_path = os.path.join(opt.save_path, 'test_' + f'{test_idx[i]}')
