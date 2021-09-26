@@ -42,8 +42,8 @@ def test(opt, device):
     print(f"HORIZON: {horizon}")
 
     test_idx = []
-    for i in range(1, 10):
-        test_idx.append(i * 125)
+    for i in range(1, 2):
+        test_idx.append(i * 600)
 
     # Extract dimension from processed data
     pos_dim = lafan_dataset.num_joints * 3
@@ -61,12 +61,13 @@ def test(opt, device):
     global_pos[:,fixed] += torch.Tensor([0,0,0]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
 
     interpolation = ckpt['interpolation']
+    print(f"Interpolation Mode: {interpolation}")
 
     if interpolation == 'constant':
         global_pose_vec_gt = vectorize_representation(global_pos, global_q)
         global_pose_vec_input = global_pose_vec_gt.clone().detach()
         pose_interpolated_input = replace_constant(global_pose_vec_input, fixed)
-        input_pos = pose_interpolated_input[:,:,:pos_dim]
+        input_pos = pose_interpolated_input[:,:,:pos_dim].detach().numpy()
 
     elif interpolation == 'slerp':
         global_pose_vec_gt = vectorize_representation(global_pos, global_q)
@@ -76,6 +77,7 @@ def test(opt, device):
         root_lerped = lerp_input_repr(root_vec, fixed)
         rot_slerped = slerp_input_repr(rot_vec, fixed)
         pose_interpolated_input = torch.cat([root_lerped, rot_slerped], dim=2)
+        input_pos = pose_interpolated_input[:,:,:pos_dim].detach().numpy()
 
     else:
         raise ValueError('Invalid interpolation method')
@@ -103,26 +105,29 @@ def test(opt, device):
 
     pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(total_data,horizon-1,22,3)
     global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
-    pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec)
+    pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec).detach().numpy()
     clue = global_pos.clone().detach()
         
     # Compare Input data, Prediction, GT
     for i in range(len(test_idx)):
         save_path = os.path.join(opt.save_path, 'test_' + f'{test_idx[i]}')
         Path(save_path).mkdir(parents=True, exist_ok=True)
-
         start_pose =  lafan_dataset.data['global_pos'][test_idx[i], from_idx]
         target_pose = lafan_dataset.data['global_pos'][test_idx[i], target_idx]
         stopover_pose = clue[test_idx[i],fixed]
         gt_stopover_pose = lafan_dataset.data['global_pos'][test_idx[i], from_idx + fixed]
 
+        # Replace start/end with gt
+        pred_global_pos[test_idx[i], 0] = start_pose
+        pred_global_pos[test_idx[i], -1] = target_pose
+
         img_aggr_list = []
         for t in range(horizon-1):
             
             input_img_path = os.path.join(save_path, 'input')
-            plot_pose_with_stop(start_pose, input_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3).detach().numpy(), target_pose, stopover_pose, t, skeleton_mocap, save_dir=input_img_path, prefix='input')
+            plot_pose_with_stop(start_pose, input_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3), target_pose, stopover_pose, t, skeleton_mocap, save_dir=input_img_path, prefix='input')
             pred_img_path = os.path.join(save_path, 'pred_img')
-            plot_pose_with_stop(start_pose, pred_global_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3).detach().numpy(), target_pose, stopover_pose, t, skeleton_mocap, save_dir=pred_img_path, prefix='pred')
+            plot_pose_with_stop(start_pose, pred_global_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3), target_pose, stopover_pose, t, skeleton_mocap, save_dir=pred_img_path, prefix='pred')
             gt_img_path = os.path.join(save_path, 'gt_img')
             plot_pose_with_stop(start_pose, lafan_dataset.data['global_pos'][test_idx[i], t+from_idx], target_pose, gt_stopover_pose, t, skeleton_mocap, save_dir=gt_img_path, prefix='gt')
 
@@ -145,7 +150,7 @@ def parse_opt():
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
-    parser.add_argument('--motion_type', type=str, default='jumps', help='motion type')
+    parser.add_argument('--motion_type', type=str, default='walk', help='motion type')
     opt = parser.parse_args()
     return opt
 

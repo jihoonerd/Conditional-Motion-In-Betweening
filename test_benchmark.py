@@ -135,20 +135,27 @@ def test(opt, device):
             cond_prob.append(cond_loss.item())
         matching_condition = np.argmin(cond_prob)
         print(f"Matching Condition: {le.classes_[matching_condition]}")
-        # continue
+
         output = outputs[matching_condition]
 
+        # TODO: Start-End position replacement
         pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(1,horizon-1,22,3)
         global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
         pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec).detach().numpy()
+
+        # Replace start/end with gt
+        gt_global_pos = lafan_dataset.data['global_pos'][test_idx[i]:test_idx[i]+1, from_idx:target_idx+1].reshape(1, -1, lafan_dataset.num_joints, 3)
+        pred_global_pos[0,0] = gt_global_pos[0,0] 
+        pred_global_pos[0,-1] = gt_global_pos[0,-1]
+
         pred_global_rot = output[1:,:,pos_dim:].permute(1,0,2).reshape(1,horizon-1,22,4)
 
         # Normalize for L2P
         normalized_gt_pos = torch.Tensor((lafan_dataset.data['global_pos'][test_idx[i]:test_idx[i]+1, from_idx:target_idx+1].reshape(1, -1, lafan_dataset.num_joints * 3).transpose(0,2,1) - x_mean) / x_std)
         normalized_pred_pos = torch.Tensor((pred_global_pos.reshape(1, -1, lafan_dataset.num_joints * 3).transpose(0,2,1) - x_mean) / x_std)
 
-        l2p.append(torch.mean(torch.norm(normalized_pred_pos[0] - normalized_gt_pos[0], dim=(0))).item())
-        l2q.append(torch.mean(torch.norm(pred_global_rot[0] - global_q[test_idx[i]], dim=(1,2))).item())
+        l2p.append(torch.mean(torch.norm(normalized_pred_pos[0] - normalized_gt_pos[0], dim=(0))).item()) # TODO: Check dim
+        l2q.append(torch.mean(torch.norm(pred_global_rot[0] - global_q[test_idx[i]], dim=(1,2))).item()) # TODO: Check dim
         print(f"ID {test_idx[i]}: test completed.")
     
     l2p_mean = np.mean(l2p)
