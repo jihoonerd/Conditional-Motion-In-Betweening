@@ -2,21 +2,19 @@ import argparse
 import os
 from pathlib import Path
 import pickle
-import imageio
 import numpy as np
 import torch
 import torch.nn as nn
-from PIL import Image
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
+from rmi.data.utils import drop_end_quat
 from rmi.model.network import TransformerModel
 from rmi.model.preprocess import (lerp_input_repr, replace_constant, slerp_input_repr,
                                   vectorize_representation)
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
-from rmi.vis.pose import plot_pose_with_stop
 from sklearn.preprocessing import LabelEncoder
-from rmi.lafan1 import extract
+from rmi.lafan1 import extract, benchmarks
 
 
 def test(opt, device):
@@ -122,6 +120,8 @@ def test(opt, device):
 
     l2p = []
     l2q = []
+
+    pred_rot_npss = []
     for i in range(len(test_idx)):
         print(f"Processing ID: {test_idx[i]}")
         cond_prob = []
@@ -149,21 +149,35 @@ def test(opt, device):
         pred_global_pos[0,-1] = gt_global_pos[0,-1]
 
         pred_global_rot = output[1:,:,pos_dim:].permute(1,0,2).reshape(1,horizon-1,22,4)
+        gt_global_rot = global_q[test_idx[i]:test_idx[i]+1]
+        pred_global_rot[0,0] = gt_global_rot[0,0]
+        pred_global_rot[0,-1] = gt_global_rot[0,-1]
+        pred_rot_npss.append(pred_global_rot)
 
         # Normalize for L2P
         normalized_gt_pos = torch.Tensor((lafan_dataset.data['global_pos'][test_idx[i]:test_idx[i]+1, from_idx:target_idx+1].reshape(1, -1, lafan_dataset.num_joints * 3).transpose(0,2,1) - x_mean) / x_std)
         normalized_pred_pos = torch.Tensor((pred_global_pos.reshape(1, -1, lafan_dataset.num_joints * 3).transpose(0,2,1) - x_mean) / x_std)
 
-        l2p.append(torch.mean(torch.norm(normalized_pred_pos[0] - normalized_gt_pos[0], dim=(0))).item()) # TODO: Check dim
-        l2q.append(torch.mean(torch.norm(pred_global_rot[0] - global_q[test_idx[i]], dim=(1,2))).item()) # TODO: Check dim
+        l2p.append(torch.mean(torch.norm(normalized_pred_pos[0] - normalized_gt_pos[0], dim=(0))).item())
+        l2q.append(torch.mean(torch.norm(pred_global_rot[0] - global_q[test_idx[i]], dim=(1,2))).item())
         print(f"ID {test_idx[i]}: test completed.")
     
     l2p_mean = np.mean(l2p)
     l2q_mean = np.mean(l2q)
 
+    pred_quaternions = torch.cat(pred_rot_npss, dim=0)
+
+    # Drop end nodes for fair comparison
+    npss_gt_quat = drop_end_quat(global_q.detach().numpy(), skeleton_mocap)
+    npss_pred_quat = drop_end_quat(pred_quaternions.detach().numpy(), skeleton_mocap)
+    
+    npss = benchmarks.fast_npss(benchmarks.flatjoints(npss_gt_quat), benchmarks.flatjoints(npss_pred_quat))
+
     print(f"TOTAL TEST DATA: {len(l2p)}")
     print(f"L2P: {l2p_mean}")
     print(f"L2Q: {l2q_mean}")
+    print(f"NPSS: {npss}")
+
 
 def parse_opt():
     parser = argparse.ArgumentParser()

@@ -6,39 +6,12 @@ import torch
 from rmi.data.quaternion import euler_to_quaternion, qeuler_np
 
 
-def generate_infogan_code(batch_size, discrete_code_dim, continuous_code_dim, device):
-    """Generate discrete infogan latent code to given input data"""
-
-    if discrete_code_dim != 0 and continuous_code_dim != 0:
-        label_idx = torch.randint(low=0, high=discrete_code_dim, size=(batch_size,), device=device)
-        discrete_code = torch.nn.functional.one_hot(label_idx, num_classes=discrete_code_dim)
-        continuous_code = torch.rand(batch_size, continuous_code_dim, device=device) * 2 - 1
-        return_code = torch.cat([discrete_code, continuous_code], dim=1)
-
-    elif discrete_code_dim != 0 : 
-        label_idx = torch.randint(low=0, high=discrete_code_dim, size=(batch_size,), device=device)
-        discrete_code = torch.nn.functional.one_hot(label_idx, num_classes=discrete_code_dim)
-        return_code = discrete_code
-
-    elif continuous_code_dim != 0:
-        label_idx = 0
-        continuous_code = torch.rand(batch_size, continuous_code_dim, device=device) * 2 - 1
-        return_code = continuous_code
-        
-    return return_code, label_idx
-
-
-def append_infogan_code(input_data, discrete_code_dim, device):
-    """Append discrete infogan latent code to given input data"""
-
-    num_samples = input_data.shape[0]
-
-    if discrete_code_dim != 0:
-        label_idx = torch.randint(low=0, high=discrete_code_dim, size=(num_samples,), device=device)
-        discrete_code = torch.nn.functional.one_hot(label_idx)
-    return_vec = torch.cat([input_data, discrete_code], dim=1)
-    return return_vec, label_idx
-
+def drop_end_quat(quaternions, skeleton):
+    """
+    quaternions: [N,T,Joints,4]
+    """
+    
+    return quaternions[:,:,skeleton.has_children()]
 
 def write_json(filename, local_q, root_pos, joint_names):
     json_out = {}
