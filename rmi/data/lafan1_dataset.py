@@ -55,7 +55,7 @@ class LAFAN1Dataset(Dataset):
         # X and Q are local position/quaternion. Motions are rotated to make 10th frame facing X+ position.
         # Refer to paper 3.1 Data formatting
         X, Q, parents, contacts_l, contacts_r, seq_names = extract.get_lafan1_set(
-            self.lafan_path, self.actors, self.window, self.offset
+            self.lafan_path, self.actors, self.window, self.offset, self.train
         )
 
         # Retrieve global representations. (global quaternion, global positions)
