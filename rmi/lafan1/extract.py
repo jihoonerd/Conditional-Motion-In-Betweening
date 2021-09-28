@@ -168,7 +168,7 @@ def read_bvh(filename, start=None, end=None, order=None):
     return Anim(rotations, positions, offsets, parents, names)
 
 
-def get_lafan1_set(bvh_path, actors, window=50, offset=20, train=True):
+def get_lafan1_set(bvh_path, actors, window=50, offset=20, train=True, stats=False):
     """
     Extract the same test set as in the article, given the location of the BVH files.
 
@@ -201,6 +201,9 @@ def get_lafan1_set(bvh_path, actors, window=50, offset=20, train=True):
             subject = file_info[1]
 
             if (not train) and (file_info[-1] == 'LRflip'):
+                continue
+
+            if stats and (file_info[-1] == 'LRflip'):
                 continue
 
             # seq_name, subject = ntpath.basename(file[:-4]).split("_")
@@ -246,7 +249,7 @@ def get_train_stats(bvh_folder, train_set):
     :return: Tuple of (local position mean vector, local position standard deviation vector, local joint offsets tensor)
     """
     print('Building the train set...')
-    xtrain, qtrain, parents, _, _, _ = get_lafan1_set(bvh_folder, train_set, window=50, offset=20, train=True)
+    xtrain, qtrain, parents, _, _, _ = get_lafan1_set(bvh_folder, train_set, window=50, offset=20, train=True, stats=True)
 
     print('Computing stats...\n')
     # Joint offsets : are constant, so just take the first frame:
