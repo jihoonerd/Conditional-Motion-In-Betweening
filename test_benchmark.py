@@ -149,17 +149,18 @@ def test(opt, device):
         pred_global_pos[0,-1] = gt_global_pos[0,-1]
 
         pred_global_rot = output[1:,:,pos_dim:].permute(1,0,2).reshape(1,horizon-1,22,4)
+        pred_global_rot_normalized = nn.functional.normalize(pred_global_rot, p=2.0, dim=3)
         gt_global_rot = global_q[test_idx[i]:test_idx[i]+1]
-        pred_global_rot[0,0] = gt_global_rot[0,0]
-        pred_global_rot[0,-1] = gt_global_rot[0,-1]
-        pred_rot_npss.append(pred_global_rot)
+        pred_global_rot_normalized[0,0] = gt_global_rot[0,0]
+        pred_global_rot_normalized[0,-1] = gt_global_rot[0,-1]
+        pred_rot_npss.append(pred_global_rot_normalized)
 
         # Normalize for L2P
         normalized_gt_pos = torch.Tensor((lafan_dataset.data['global_pos'][test_idx[i]:test_idx[i]+1, from_idx:target_idx+1].reshape(1, -1, lafan_dataset.num_joints * 3).transpose(0,2,1) - x_mean) / x_std)
         normalized_pred_pos = torch.Tensor((pred_global_pos.reshape(1, -1, lafan_dataset.num_joints * 3).transpose(0,2,1) - x_mean) / x_std)
 
         l2p.append(torch.mean(torch.norm(normalized_pred_pos[0] - normalized_gt_pos[0], dim=(0))).item())
-        l2q.append(torch.mean(torch.norm(pred_global_rot[0] - global_q[test_idx[i]], dim=(1,2))).item())
+        l2q.append(torch.mean(torch.norm(pred_global_rot_normalized[0] - global_q[test_idx[i]], dim=(1,2))).item())
         print(f"ID {test_idx[i]}: test completed.")
     
     l2p_mean = np.mean(l2p)
