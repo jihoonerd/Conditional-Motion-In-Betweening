@@ -133,8 +133,12 @@ def train(opt, device):
                 recon_pos_loss.append(opt.loss_pos_weight * pos_loss)
 
                 rot_pred = output[1:,:,pos_dim:].permute(1,0,2)
+                rot_pred_reshaped = rot_pred.reshape(rot_pred.shape[0], rot_pred.shape[1], lafan_dataset.num_joints, 4)
+                rot_pred_normalized = nn.functional.normalize(rot_pred_reshaped, p=2.0, dim=3)
+
                 rot_gt = minibatch_pose_gt[:,:,pos_dim:]
-                rot_loss = l1_loss(rot_pred, rot_gt)
+                rot_gt_reshaped = rot_gt.reshape(rot_gt.shape[0], rot_gt.shape[1], lafan_dataset.num_joints, 4)
+                rot_loss = l1_loss(rot_pred_normalized, rot_gt_reshaped)
                 recon_rot_loss.append(opt.loss_rot_weight * rot_loss)
 
                 total_g_loss = opt.loss_pos_weight * pos_loss + \
@@ -190,7 +194,7 @@ def parse_opt():
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
     parser.add_argument('--batch_size', type=int, default=128, help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--device', default='1', help='cuda device, i.e. 0 or -1 or cpu')
+    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or -1 or cpu')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=1, help='Log model after every "save_period" epoch')
