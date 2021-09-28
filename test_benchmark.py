@@ -165,9 +165,8 @@ def test(opt, device):
     l2p_mean = np.mean(l2p)
     l2q_mean = np.mean(l2q)
 
-    pred_quaternions = torch.cat(pred_rot_npss, dim=0)
-
     # Drop end nodes for fair comparison
+    pred_quaternions = torch.cat(pred_rot_npss, dim=0)
     npss_gt = global_q[:,:,skeleton_mocap.has_children()].reshape(global_q.shape[0],global_q.shape[1], -1)
     npss_pred = pred_quaternions[:,:,skeleton_mocap.has_children()].reshape(pred_quaternions.shape[0],pred_quaternions.shape[1], -1)
     npss = benchmarks.npss(npss_gt, npss_pred).item()
