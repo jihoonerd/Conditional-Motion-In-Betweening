@@ -135,7 +135,7 @@ def train(opt, device):
                 rot_pred = output[1:,:,pos_dim:].permute(1,0,2)
                 rot_gt = minibatch_pose_gt[:,:,pos_dim:]
                 rot_loss = l1_loss(rot_pred, rot_gt)
-                recon_rot_loss.append(opt.loss_rot_weight * rot_loss)         
+                recon_rot_loss.append(opt.loss_rot_weight * rot_loss)
 
                 total_g_loss = opt.loss_pos_weight * pos_loss + \
                                 opt.loss_rot_weight * rot_loss + \
