@@ -168,10 +168,9 @@ def test(opt, device):
     pred_quaternions = torch.cat(pred_rot_npss, dim=0)
 
     # Drop end nodes for fair comparison
-    npss_gt_quat = drop_end_quat(global_q.detach().numpy(), skeleton_mocap)
-    npss_pred_quat = drop_end_quat(pred_quaternions.detach().numpy(), skeleton_mocap)
-    
-    npss = benchmarks.fast_npss(benchmarks.flatjoints(npss_gt_quat), benchmarks.flatjoints(npss_pred_quat))
+    npss_gt = global_q[:,:,skeleton_mocap.has_children()].reshape(global_q.shape[0],global_q.shape[1], -1)
+    npss_pred = pred_quaternions[:,:,skeleton_mocap.has_children()].reshape(pred_quaternions.shape[0],pred_quaternions.shape[1], -1)
+    npss = benchmarks.npss(npss_gt, npss_pred).item()
 
     print(f"TOTAL TEST DATA: {len(l2p)}")
     print(f"L2P: {l2p_mean}")

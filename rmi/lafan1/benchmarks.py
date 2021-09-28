@@ -4,8 +4,40 @@ import zipfile
 import os
 from . import extract
 from . import utils
+import torch
 
 np.set_printoptions(precision=3)
+
+
+def npss(gt_seq, pred_seq):
+    # Fourier coefficients along the time dimension
+    gt_fourier_coeffs = torch.real(torch.fft.fft(gt_seq, dim=1))
+    pred_fourier_coeffs = torch.real(torch.fft.fft(pred_seq, dim=1))
+
+    # Square of the Fourier coefficients
+    gt_power = torch.square(gt_fourier_coeffs)
+    pred_power = torch.square(pred_fourier_coeffs)
+
+    # Sum of powers over time dimension
+    gt_total_power = torch.sum(gt_power, dim=1)
+    pred_total_power = torch.sum(pred_power, dim=1)
+
+    # Normalize powers with totals
+    gt_norm_power = gt_power / gt_total_power.unsqueeze(1)
+    pred_norm_power = pred_power / pred_total_power.unsqueeze(1)
+
+    # Cumulative sum over time
+    cdf_gt_power = torch.cumsum(gt_norm_power, dim=1)
+    cdf_pred_power = torch.cumsum(pred_norm_power, dim=1)
+
+    # Earth mover distance
+    emd = torch.norm((cdf_pred_power - cdf_gt_power), p=1, dim=1)
+
+    # Weighted EMD
+    power_weighted_emd = torch.sum(emd * gt_total_power) / torch.sum(gt_total_power)
+
+    return power_weighted_emd
+
 
 
 def fast_npss(gt_seq, pred_seq):

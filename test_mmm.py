@@ -41,7 +41,7 @@ def test(opt, device):
     horizon = ckpt['horizon']
     print(f"HORIZON: {horizon}")
 
-    test_idx = [600]
+    test_idx = [1850]
     # for i in range(1, 40):
     #     test_idx.append(i * 50)
 
