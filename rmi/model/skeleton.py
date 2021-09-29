@@ -45,6 +45,8 @@ sk_parents = [-1,  0,  1,  2,  3,  4,
 
 sk_joints_to_remove = [5,10,16,21,26]
 
+joint_names = ["Hips", "LeftUpLeg", "LeftLeg", "LeftFoot", "LeftToe", "RightUpLeg", "RightLeg", "RightFoot", "RightToe", "Spine", "Spine1", "Spine2", "Neck", "Head", "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand", "RightShoulder", "RightArm", "RightForeArm", "RightHand"]
+
 class Skeleton:
     def __init__(self, offsets, parents, joints_left=None, joints_right=None, bone_length=None, device=None):
         assert len(offsets) == len(parents)

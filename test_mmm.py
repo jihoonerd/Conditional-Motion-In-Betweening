@@ -7,15 +7,18 @@ import numpy as np
 import torch
 import torch.nn as nn
 from PIL import Image
+from sklearn.preprocessing import LabelEncoder
 
 from rmi.data.lafan1_dataset import LAFAN1Dataset
+from rmi.data.utils import write_json
+from rmi.lafan1.utils import quat_ik
 from rmi.model.network import TransformerModel
-from rmi.model.preprocess import (lerp_input_repr, slerp_input_repr, replace_constant,
-                                  vectorize_representation)
-from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
+from rmi.model.preprocess import (lerp_input_repr, replace_constant,
+                                  slerp_input_repr, vectorize_representation)
+from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets, joint_names,
                                 sk_parents)
 from rmi.vis.pose import plot_pose_with_stop
-from sklearn.preprocessing import LabelEncoder
+
 
 def test(opt, device):
 
@@ -106,12 +109,19 @@ def test(opt, device):
     pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(total_data,horizon-1,22,3)
     global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
     pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec).detach().numpy()
+
+    pred_global_rot = output[1:,:,pos_dim:].permute(1,0,2).reshape(total_data,horizon-1,22,4)
+    pred_global_rot_normalized = nn.functional.normalize(pred_global_rot, p=2.0, dim=3).detach().numpy()
+
     clue = global_pos.clone().detach()
         
     # Compare Input data, Prediction, GT
     for i in range(len(test_idx)):
         save_path = os.path.join(opt.save_path, 'test_' + f'{test_idx[i]}')
         Path(save_path).mkdir(parents=True, exist_ok=True)
+        json_path = os.path.join(save_path, 'json')
+        Path(json_path).mkdir(parents=True, exist_ok=True)
+
         start_pose =  lafan_dataset.data['global_pos'][test_idx[i], from_idx]
         target_pose = lafan_dataset.data['global_pos'][test_idx[i], target_idx]
         stopover_pose = clue[test_idx[i],fixed]
@@ -121,7 +131,17 @@ def test(opt, device):
         pred_global_pos[test_idx[i], 0] = start_pose
         pred_global_pos[test_idx[i], -1] = target_pose
 
+        gpos = pred_global_pos[test_idx[i]]
+
+        grot = pred_global_rot_normalized[test_idx[i]]
+
+        local_quaternion, local_positions = quat_ik(grot, gpos, parents=skeleton_mocap.parents())
+
         img_aggr_list = []
+
+        write_json(filename=os.path.join(json_path, f'start.json'), local_q=local_quaternion[0], root_pos=local_positions[0,0], joint_names=joint_names)
+        write_json(filename=os.path.join(json_path, f'target.json'), local_q=local_quaternion[-1], root_pos=local_positions[-1,0], joint_names=joint_names)
+
         for t in range(horizon-1):
             
             input_img_path = os.path.join(save_path, 'input')
@@ -130,6 +150,9 @@ def test(opt, device):
             plot_pose_with_stop(start_pose, pred_global_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3), target_pose, stopover_pose, t, skeleton_mocap, save_dir=pred_img_path, prefix='pred')
             gt_img_path = os.path.join(save_path, 'gt_img')
             plot_pose_with_stop(start_pose, lafan_dataset.data['global_pos'][test_idx[i], t+from_idx], target_pose, gt_stopover_pose, t, skeleton_mocap, save_dir=gt_img_path, prefix='gt')
+
+            
+            write_json(filename=os.path.join(json_path, f'{t:05}.json'), local_q=local_quaternion[t], root_pos=local_positions[t,0], joint_names=joint_names)
 
             input_img = Image.open(os.path.join(input_img_path, 'input'+str(t)+'.png'), 'r')
             pred_img = Image.open(os.path.join(pred_img_path, 'pred'+str(t)+'.png'), 'r')
@@ -145,7 +168,7 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='slerp_30', help='experiment name')
+    parser.add_argument('--exp_name', default='slerp30_qnorm', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
