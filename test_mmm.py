@@ -44,7 +44,7 @@ def test(opt, device):
     horizon = ckpt['horizon']
     print(f"HORIZON: {horizon}")
 
-    test_idx = [1850]
+    test_idx = [141]
     # for i in range(1, 40):
     #     test_idx.append(i * 50)
 
@@ -58,10 +58,10 @@ def test(opt, device):
     local_q_normalized = nn.functional.normalize(local_q, p=2.0, dim=-1)
 
     # Replace testing inputs
-    fixed = 0
+    fixed = 24
 
     global_pos, global_q = skeleton_mocap.forward_kinematics_with_rotation(local_q_normalized, root_pos)
-    global_pos[:,fixed] += torch.Tensor([0,0,0]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
+    global_pos[:,fixed] += torch.Tensor([0,0,-20]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
 
     interpolation = ckpt['interpolation']
     print(f"Interpolation Mode: {interpolation}")
@@ -125,6 +125,7 @@ def test(opt, device):
         start_pose =  lafan_dataset.data['global_pos'][test_idx[i], from_idx]
         target_pose = lafan_dataset.data['global_pos'][test_idx[i], target_idx]
         stopover_pose = clue[test_idx[i],fixed]
+        stopover_rot = global_q[test_idx[i],fixed]
         gt_stopover_pose = lafan_dataset.data['global_pos'][test_idx[i], from_idx + fixed]
 
         # Replace start/end with gt
@@ -135,12 +136,14 @@ def test(opt, device):
 
         grot = pred_global_rot_normalized[test_idx[i]]
 
+        local_quaternion_stopover, local_positions_stopover = quat_ik(stopover_rot.detach().numpy(), stopover_pose.detach().numpy(), parents=skeleton_mocap.parents())
         local_quaternion, local_positions = quat_ik(grot, gpos, parents=skeleton_mocap.parents())
 
         img_aggr_list = []
 
         write_json(filename=os.path.join(json_path, f'start.json'), local_q=local_quaternion[0], root_pos=local_positions[0,0], joint_names=joint_names)
         write_json(filename=os.path.join(json_path, f'target.json'), local_q=local_quaternion[-1], root_pos=local_positions[-1,0], joint_names=joint_names)
+        write_json(filename=os.path.join(json_path, f'stopover.json'), local_q=local_quaternion_stopover, root_pos=local_positions_stopover[0], joint_names=joint_names)
 
         for t in range(horizon-1):
             
@@ -168,12 +171,12 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='slerp30_qnorm', help='experiment name')
+    parser.add_argument('--exp_name', default='slerp_40', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
-    parser.add_argument('--motion_type', type=str, default='walk', help='motion type')
+    parser.add_argument('--motion_type', type=str, default='jumps', help='motion type')
     opt = parser.parse_args()
     return opt
 
