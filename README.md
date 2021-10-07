@@ -1,4 +1,4 @@
-# Motion-In-betweening-with-InfoGAN
+# Doubliy Conditioned Motion In-Painting
 
 WIP Project
 
