@@ -14,12 +14,13 @@ from rmi.model.preprocess import (lerp_input_repr, replace_constant, slerp_input
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
 from sklearn.preprocessing import LabelEncoder
-from rmi.lafan1 import extract, benchmarks
+from rmi.lafan1 import extract
 
 
 def test(opt, device):
 
     save_dir = Path(os.path.join('runs', 'train', opt.exp_name))
+    Path(os.path.join('cond_bch', opt.gt_motion)).mkdir(parents=True, exist_ok=True)
     wdir = save_dir / 'weights'
     weights = os.listdir(wdir)
     weights_paths = [wdir / weight for weight in weights]
@@ -118,69 +119,79 @@ def test(opt, device):
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
-    l2p = []
-    l2q = []
+    testing_motions = ['walk', 'run', 'jumps', 'ground', 'dance', 'aiming']
 
-    pred_rot_npss = []
-    motion_type = opt.motion_type
-    print(f"Condition: {motion_type}")
+    bch_total = []
+    for cond_motion in testing_motions:
+        l2p = []
+        l2q = []
 
-    for i in range(len(test_idx)):
-        motion_index = np.where(le.classes_ == motion_type)[0][0]
+        pred_rot_npss = []
 
-        conditioning_label = torch.Tensor([[motion_index]]).type(torch.int64).to(device)
-        cond_output, _ = model(pose_vectorized_input[:, test_idx[i]:test_idx[i]+1, :], src_mask, conditioning_label)
+        print(f"GT: {opt.gt_motion}")
+        print(f"Condition: {cond_motion}")
+        
+        bch_out = {}
 
-        output = cond_output
+        bch_out['cond_motion'] = cond_motion
+        bch_out['gt_motion'] = opt.gt_motion
 
-        # TODO: Start-End position replacement
-        pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(1,horizon-1,22,3)
-        global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
-        pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec).detach().numpy()
+        for i in range(len(test_idx)):
+            motion_index = np.where(le.classes_ == cond_motion)[0][0]
 
-        # Replace start/end with gt
-        gt_global_pos = lafan_dataset.data['global_pos'][test_idx[i]:test_idx[i]+1, from_idx:target_idx+1].reshape(1, -1, lafan_dataset.num_joints, 3)
-        pred_global_pos[0,0] = gt_global_pos[0,0] 
-        pred_global_pos[0,-1] = gt_global_pos[0,-1]
+            conditioning_label = torch.Tensor([[motion_index]]).type(torch.int64).to(device)
+            cond_output, _ = model(pose_vectorized_input[:, test_idx[i]:test_idx[i]+1, :], src_mask, conditioning_label)
 
-        pred_global_rot = output[1:,:,pos_dim:].permute(1,0,2).reshape(1,horizon-1,22,4)
-        pred_global_rot_normalized = nn.functional.normalize(pred_global_rot, p=2.0, dim=3)
-        gt_global_rot = global_q[test_idx[i]:test_idx[i]+1]
-        pred_global_rot_normalized[0,0] = gt_global_rot[0,0]
-        pred_global_rot_normalized[0,-1] = gt_global_rot[0,-1]
-        pred_rot_npss.append(pred_global_rot_normalized)
+            output = cond_output
 
-        # Normalize for L2P
-        normalized_gt_pos = torch.Tensor((lafan_dataset.data['global_pos'][test_idx[i]:test_idx[i]+1, from_idx:target_idx+1].reshape(1, -1, lafan_dataset.num_joints * 3).transpose(0,2,1) - x_mean) / x_std)
-        normalized_pred_pos = torch.Tensor((pred_global_pos.reshape(1, -1, lafan_dataset.num_joints * 3).transpose(0,2,1) - x_mean) / x_std)
+            # TODO: Start-End position replacement
+            pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(1,horizon-1,22,3)
+            global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
+            pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec).detach().numpy()
 
-        l2p.append(torch.mean(torch.norm(normalized_pred_pos[0] - normalized_gt_pos[0], dim=(0))).item())
-        l2q.append(torch.mean(torch.norm(pred_global_rot_normalized[0] - global_q[test_idx[i]], dim=(1,2))).item())
-    
-    l2p_mean = np.mean(l2p)
-    l2q_mean = np.mean(l2q)
+            # Replace start/end with gt
+            gt_global_pos = lafan_dataset.data['global_pos'][test_idx[i]:test_idx[i]+1, from_idx:target_idx+1].reshape(1, -1, lafan_dataset.num_joints, 3)
+            pred_global_pos[0,0] = gt_global_pos[0,0] 
+            pred_global_pos[0,-1] = gt_global_pos[0,-1]
 
-    # Drop end nodes for fair comparison
-    pred_quaternions = torch.cat(pred_rot_npss, dim=0)
-    npss_gt = global_q[:,:,skeleton_mocap.has_children()].reshape(global_q.shape[0],global_q.shape[1], -1)
-    npss_pred = pred_quaternions[:,:,skeleton_mocap.has_children()].reshape(pred_quaternions.shape[0],pred_quaternions.shape[1], -1)
-    npss = benchmarks.npss(npss_gt, npss_pred).item()
+            pred_global_rot = output[1:,:,pos_dim:].permute(1,0,2).reshape(1,horizon-1,22,4)
+            pred_global_rot_normalized = nn.functional.normalize(pred_global_rot, p=2.0, dim=3)
+            gt_global_rot = global_q[test_idx[i]:test_idx[i]+1]
+            pred_global_rot_normalized[0,0] = gt_global_rot[0,0]
+            pred_global_rot_normalized[0,-1] = gt_global_rot[0,-1]
+            pred_rot_npss.append(pred_global_rot_normalized)
 
-    print(f"TOTAL TEST DATA: {len(l2p)}")
-    print(f"L2P: {l2p_mean}")
-    print(f"L2Q: {l2q_mean}")
-    print(f"NPSS: {npss}")
+            # Normalize for L2P
+            normalized_gt_pos = torch.Tensor((lafan_dataset.data['global_pos'][test_idx[i]:test_idx[i]+1, from_idx:target_idx+1].reshape(1, -1, lafan_dataset.num_joints * 3).transpose(0,2,1) - x_mean) / x_std)
+            normalized_pred_pos = torch.Tensor((pred_global_pos.reshape(1, -1, lafan_dataset.num_joints * 3).transpose(0,2,1) - x_mean) / x_std)
 
+            l2p.append(torch.mean(torch.norm(normalized_pred_pos[0] - normalized_gt_pos[0], dim=(0))).item())
+            l2q.append(torch.mean(torch.norm(pred_global_rot_normalized[0] - global_q[test_idx[i]], dim=(1,2))).item())
+        
+        l2p_mean = np.mean(l2p)
+        l2q_mean = np.mean(l2q)
+
+        print(f"TOTAL TEST DATA: {len(l2p)}")
+        print(f"L2P: {l2p_mean}")
+        print(f"L2Q: {l2q_mean}")
+        print("=================")
+
+        bch_out['L2P'] = l2p_mean
+        bch_out['L2Q'] = l2q_mean
+        bch_out['TotalData'] = len(l2p)
+        bch_total.append(bch_out)
+        with open(os.path.join('cond_bch', opt.gt_motion, f'{opt.gt_motion}_bch.pkl'), 'wb') as f:
+            pickle.dump(bch_total, f)
 
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
     parser.add_argument('--exp_name', default='slerp30_qnorm', help='experiment name')
-    parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/TEST_RUN', help='BVH dataset path')
+    parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/TEST_WALK', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data_test_run/', help='path to save pickled processed data')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_test_walk/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
-    parser.add_argument('--motion_type', type=str, default='ground')
+    parser.add_argument('--gt_motion', type=str, default='walk')
     opt = parser.parse_args()
     return opt
 
