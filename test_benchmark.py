@@ -22,10 +22,14 @@ def test(opt, device):
     save_dir = Path(os.path.join('runs', 'train', opt.exp_name))
     wdir = save_dir / 'weights'
     weights = os.listdir(wdir)
-    weights_paths = [wdir / weight for weight in weights]
-    latest_weight = max(weights_paths , key = os.path.getctime)
-    ckpt = torch.load(latest_weight, map_location=device)
-    print(f"Loaded weight: {latest_weight}")
+
+    if opt.weight == 'latest':
+        weights_paths = [wdir / weight for weight in weights]
+        weight_path = max(weights_paths , key = os.path.getctime)
+    else:
+        weight_path = wdir / ('train-' + opt.weight + '.pt')
+    ckpt = torch.load(weight_path, map_location=device)
+    print(f"Loaded weight: {weight_path}")
 
     # Load Skeleton
     skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
@@ -182,6 +186,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
     parser.add_argument('--exp_name', default='slerp30_qnorm', help='experiment name')
+    parser.add_argument('--weight', default='4000')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
