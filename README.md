@@ -18,7 +18,6 @@ WIP Project
 
 ## Trained Weights
 
-| 30 Frame Model Weight | 40 Frame Model Weight |
-|:---:|:---:|
-|[Download](https://drive.google.com/file/d/1BuyHzDrgbvFIDlmfBnKo91UjmGQELA0w/view?usp=sharing)|[Download](https://drive.google.com/file/d/1C2u-Hd3w7PD_hp3REAZrMXI5A4NBkW-3/view?usp=sharing)|
+You can download trained weights at [here](https://drive.google.com/drive/folders/1BmPZ5TcWwtg3A38OK_eIT8fyp-FSpiwH?usp=sharing).
+
 
