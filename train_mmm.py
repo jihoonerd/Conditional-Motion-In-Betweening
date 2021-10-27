@@ -50,7 +50,7 @@ def train(opt, device):
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, device=device)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, device=device, window=opt.window)
     
     # Replace to noise for inbetweening frames
     from_idx, target_idx = opt.from_idx, opt.target_idx  # default: 9-38 (30 frames), max: 48
@@ -192,6 +192,7 @@ def parse_opt():
     parser.add_argument('--weights', type=str, default='', help='weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
+    parser.add_argument('--window', type=int, default=50, help='horizon')
     parser.add_argument('--batch_size', type=int, default=128, help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or -1 or cpu')
@@ -205,7 +206,7 @@ def parse_opt():
     parser.add_argument('--loss_pos_weight', type=float, default=0.03, help='loss_pos_weight')
     parser.add_argument('--loss_rot_weight', type=float, default=1.0, help='loss_rot_weight')
     parser.add_argument('--from_idx', type=int, default=9, help='from idx')
-    parser.add_argument('--target_idx', type=int, default=38, help='target idx')
+    parser.add_argument('--target_idx', type=int, default=48, help='target idx')
     parser.add_argument('--interpolation', type=str, default='slerp', help='interpolation')
     opt = parser.parse_args()
     return opt
