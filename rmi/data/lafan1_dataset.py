@@ -6,7 +6,7 @@ import pickle
 import os 
 
 class LAFAN1Dataset(Dataset):
-    def __init__(self, lafan_path: str, processed_data_dir : str, train: bool, device: str):
+    def __init__(self, lafan_path: str, processed_data_dir : str, train: bool, device: str, window: int=50):
         self.lafan_path = lafan_path
 
         self.train = train
@@ -16,7 +16,7 @@ class LAFAN1Dataset(Dataset):
         )
 
         # 4.3: ... The training statistics for normalization are computed on windows of 50 frames offset by 20 frames.
-        self.window = 50
+        self.window = window
 
         # 4.3: Given the larger size of ... we sample our test windows from Subject 5 at every 40 frames.
         # The training statistics for normalization are computed on windows of 50 frames offset by 20 frames.
