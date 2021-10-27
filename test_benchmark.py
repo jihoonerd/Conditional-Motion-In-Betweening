@@ -1,5 +1,6 @@
 import argparse
 import os
+import json
 from pathlib import Path
 import pickle
 import numpy as np
@@ -20,6 +21,8 @@ from rmi.lafan1 import extract, benchmarks
 def test(opt, device):
 
     save_dir = Path(os.path.join('runs', 'train', opt.exp_name))
+    test_dir = Path(os.path.join('runs', 'test', opt.exp_name))
+    test_dir.mkdir(exist_ok=True, parents=True)
     wdir = save_dir / 'weights'
     weights = os.listdir(wdir)
 
@@ -181,16 +184,25 @@ def test(opt, device):
     print(f"L2Q: {l2q_mean}")
     print(f"NPSS: {npss}")
 
+    benchmark_out = {
+        'total_data': len(l2p),
+        'L2P': l2p_mean,
+        'L2Q': l2q_mean,
+        'NPSS': npss
+    }
+
+    with open(os.path.join(test_dir, f'benchmark_out-{opt.weight}.json'), 'w') as f:
+        json.dump(benchmark_out, f)
+
 
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
     parser.add_argument('--exp_name', default='slerp30_qnorm', help='experiment name')
-    parser.add_argument('--weight', default='4000')
+    parser.add_argument('--weight', default='latest')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
-    parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
     opt = parser.parse_args()
     return opt
 
