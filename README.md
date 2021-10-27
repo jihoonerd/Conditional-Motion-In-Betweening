@@ -1,4 +1,4 @@
-# Doubliy Conditioned Motion In-Painting
+# Doubly Conditioned Motion In-Painting
 
 WIP Project
 
