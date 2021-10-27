@@ -15,3 +15,9 @@ WIP Project
    With this, you will have unpacked LAFAN dataset under `ubisoft-laforge-animation-dataset` folder.
 
 3. Now, install packages listed in `requirements.txt`. Use appropriate `pytorch` version depending on your device(CPU/GPU).
+
+## Trained Weights
+
+You can download trained weights at [here](https://drive.google.com/drive/folders/1BmPZ5TcWwtg3A38OK_eIT8fyp-FSpiwH?usp=sharing).
+
+
