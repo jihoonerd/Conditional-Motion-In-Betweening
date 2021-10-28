@@ -36,7 +36,7 @@ def test(opt, device):
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, device=device)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, device=device, window=ckpt['horizon'] + 10 - 1)
     total_data = lafan_dataset.data['global_pos'].shape[0]
     
     # Replace with noise to In-betweening Frames
@@ -58,10 +58,10 @@ def test(opt, device):
     local_q_normalized = nn.functional.normalize(local_q, p=2.0, dim=-1)
 
     # Replace testing inputs
-    fixed = 24
+    fixed =0
 
     global_pos, global_q = skeleton_mocap.forward_kinematics_with_rotation(local_q_normalized, root_pos)
-    global_pos[:,fixed] += torch.Tensor([0,0,-20]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
+    global_pos[:,fixed] += torch.Tensor([0,0,0]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
 
     interpolation = ckpt['interpolation']
     print(f"Interpolation Mode: {interpolation}")
@@ -171,10 +171,10 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='slerp_40', help='experiment name')
+    parser.add_argument('--exp_name', default='slerp80_qnorm', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_original_80/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
     parser.add_argument('--motion_type', type=str, default='jumps', help='motion type')
     opt = parser.parse_args()
