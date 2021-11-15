@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import yaml
 from sklearn.preprocessing import LabelEncoder
-from torch.optim import Adam
+from torch.optim import AdamW
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
@@ -88,7 +88,7 @@ def train(opt, device):
     transformer_encoder.to(device)
 
     l1_loss = nn.L1Loss()
-    optim = Adam(params=transformer_encoder.parameters(), lr=opt.learning_rate, betas=(opt.optim_beta1, opt.optim_beta2))
+    optim = AdamW(params=transformer_encoder.parameters(), lr=opt.learning_rate)
     scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=400, gamma=0.8)
 
     for epoch in range(1, epochs + 1):
@@ -200,8 +200,6 @@ def parse_opt():
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=1, help='Log model after every "save_period" epoch')
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='generator_learning_rate')
-    parser.add_argument('--optim_beta1', type=float, default=0.9, help='optim_beta1')
-    parser.add_argument('--optim_beta2', type=float, default=0.99, help='optim_beta2')
     parser.add_argument('--loss_cond_weight', type=float, default=2.0, help='loss_cond_weight')
     parser.add_argument('--loss_pos_weight', type=float, default=0.03, help='loss_pos_weight')
     parser.add_argument('--loss_rot_weight', type=float, default=1.0, help='loss_rot_weight')
