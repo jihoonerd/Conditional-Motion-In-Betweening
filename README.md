@@ -1,5 +1,7 @@
 # Doubly Conditioned Motion In-Painting
 
+Implementation of DC-MIP.
+
 WIP Project
 
 ## Setup
@@ -21,3 +23,4 @@ WIP Project
 You can download trained weights at [here](https://drive.google.com/drive/folders/1BmPZ5TcWwtg3A38OK_eIT8fyp-FSpiwH?usp=sharing).
 
 
+## How to run
