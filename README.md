@@ -1,8 +1,6 @@
-# Doubly Conditioned Motion In-Painting
+# Conditional Motion In-Betweening (CMIB)
 
-Implementation of DC-MIP.
-
-WIP Project
+Implementation of CMIB.
 
 ## Setup
 
@@ -23,4 +21,4 @@ WIP Project
 You can download trained weights at [here](https://drive.google.com/drive/folders/1BmPZ5TcWwtg3A38OK_eIT8fyp-FSpiwH?usp=sharing).
 
 
-## How to run
+## How to Use
