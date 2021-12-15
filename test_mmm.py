@@ -17,6 +17,7 @@ from rmi.model.preprocess import (lerp_input_repr, replace_constant,
                                   slerp_input_repr, vectorize_representation)
 from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets, joint_names,
                                 sk_parents)
+
 from rmi.vis.pose import plot_pose_with_stop
 
 
@@ -25,10 +26,15 @@ def test(opt, device):
     save_dir = Path(os.path.join('runs', 'train', opt.exp_name))
     wdir = save_dir / 'weights'
     weights = os.listdir(wdir)
-    weights_paths = [wdir / weight for weight in weights]
-    latest_weight = max(weights_paths , key = os.path.getctime)
-    ckpt = torch.load(latest_weight, map_location=device)
-    print(f"Loaded weight: {latest_weight}")
+
+    if opt.weight == 'latest':
+        weights_paths = [wdir / weight for weight in weights]
+        weight_path = max(weights_paths , key = os.path.getctime)
+    else:
+        weight_path = wdir / ('train-' + opt.weight + '.pt')
+    ckpt = torch.load(weight_path, map_location=device)
+    print(f"Loaded weight: {weight_path}")
+
 
     # Load Skeleton
     skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
@@ -44,7 +50,7 @@ def test(opt, device):
     horizon = ckpt['horizon']
     print(f"HORIZON: {horizon}")
 
-    test_idx = [141]
+    test_idx = [950]
     # for i in range(1, 40):
     #     test_idx.append(i * 50)
 
@@ -58,10 +64,14 @@ def test(opt, device):
     local_q_normalized = nn.functional.normalize(local_q, p=2.0, dim=-1)
 
     # Replace testing inputs
-    fixed =0
+    fixed = 0
 
     global_pos, global_q = skeleton_mocap.forward_kinematics_with_rotation(local_q_normalized, root_pos)
-    global_pos[:,fixed] += torch.Tensor([0,0,0]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
+
+    # for i in test_idx:
+    #     global_pos[i,fixed] = global_pos[i+85,17]
+    #     global_q[i,fixed] = global_q[i+85,17]
+    # global_pos[:,fixed] += torch.Tensor([0,30,0]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
 
     interpolation = ckpt['interpolation']
     print(f"Interpolation Mode: {interpolation}")
@@ -100,7 +110,7 @@ def test(opt, device):
     conditioning_labels = np.expand_dims((np.repeat(seq_id[0], repeats=len(seq_categories))), axis=1)
     conditioning_labels = torch.Tensor(conditioning_labels).type(torch.int64).to(device)
 
-    model = TransformerModel(seq_len=ckpt['horizon'], d_model=ckpt['d_model'], nhead=ckpt['nhead'], d_hid=ckpt['d_hid'], nlayers=ckpt['nlayers'], dropout=0.0, out_dim=repr_dim)
+    model = TransformerModel(seq_len=ckpt['horizon'], d_model=ckpt['d_model'], nhead=ckpt['nhead'], d_hid=ckpt['d_hid'], nlayers=ckpt['nlayers'], dropout=0.05, out_dim=repr_dim)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
@@ -119,8 +129,10 @@ def test(opt, device):
     for i in range(len(test_idx)):
         save_path = os.path.join(opt.save_path, 'test_' + f'{test_idx[i]}')
         Path(save_path).mkdir(parents=True, exist_ok=True)
-        json_path = os.path.join(save_path, 'json')
-        Path(json_path).mkdir(parents=True, exist_ok=True)
+        pred_json_path = os.path.join(save_path, 'pred_json')
+        Path(pred_json_path).mkdir(parents=True, exist_ok=True)
+        gt_json_path = os.path.join(save_path, 'gt_json')
+        Path(gt_json_path).mkdir(parents=True, exist_ok=True)
 
         start_pose =  lafan_dataset.data['global_pos'][test_idx[i], from_idx]
         target_pose = lafan_dataset.data['global_pos'][test_idx[i], target_idx]
@@ -141,42 +153,51 @@ def test(opt, device):
 
         img_aggr_list = []
 
-        write_json(filename=os.path.join(json_path, f'start.json'), local_q=local_quaternion[0], root_pos=local_positions[0,0], joint_names=joint_names)
-        write_json(filename=os.path.join(json_path, f'target.json'), local_q=local_quaternion[-1], root_pos=local_positions[-1,0], joint_names=joint_names)
-        write_json(filename=os.path.join(json_path, f'stopover.json'), local_q=local_quaternion_stopover, root_pos=local_positions_stopover[0], joint_names=joint_names)
+        write_json(filename=os.path.join(pred_json_path, f'start.json'), local_q=local_quaternion[0], root_pos=local_positions[0,0], joint_names=joint_names)
+        write_json(filename=os.path.join(pred_json_path, f'target.json'), local_q=local_quaternion[-1], root_pos=local_positions[-1,0], joint_names=joint_names)
+        write_json(filename=os.path.join(pred_json_path, f'stopover.json'), local_q=local_quaternion_stopover, root_pos=local_positions_stopover[0], joint_names=joint_names)
+
+        write_json(filename=os.path.join(gt_json_path, f'start.json'), local_q=local_quaternion[0], root_pos=local_positions[0,0], joint_names=joint_names)
+        write_json(filename=os.path.join(gt_json_path, f'target.json'), local_q=local_quaternion[-1], root_pos=local_positions[-1,0], joint_names=joint_names)
+        write_json(filename=os.path.join(gt_json_path, f'stopover.json'), local_q=local_quaternion_stopover, root_pos=local_positions_stopover[0], joint_names=joint_names)
 
         for t in range(horizon-1):
             
-            input_img_path = os.path.join(save_path, 'input')
-            plot_pose_with_stop(start_pose, input_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3), target_pose, stopover_pose, t, skeleton_mocap, save_dir=input_img_path, prefix='input')
-            pred_img_path = os.path.join(save_path, 'pred_img')
-            plot_pose_with_stop(start_pose, pred_global_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3), target_pose, stopover_pose, t, skeleton_mocap, save_dir=pred_img_path, prefix='pred')
-            gt_img_path = os.path.join(save_path, 'gt_img')
-            plot_pose_with_stop(start_pose, lafan_dataset.data['global_pos'][test_idx[i], t+from_idx], target_pose, gt_stopover_pose, t, skeleton_mocap, save_dir=gt_img_path, prefix='gt')
+            if opt.plot_image:
+                input_img_path = os.path.join(save_path, 'input')
+                pred_img_path = os.path.join(save_path, 'pred_img')
+                gt_img_path = os.path.join(save_path, 'gt_img')
 
-            
-            write_json(filename=os.path.join(json_path, f'{t:05}.json'), local_q=local_quaternion[t], root_pos=local_positions[t,0], joint_names=joint_names)
+                plot_pose_with_stop(start_pose, input_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3), target_pose, stopover_pose, t, skeleton_mocap, save_dir=input_img_path, prefix='input')
+                plot_pose_with_stop(start_pose, pred_global_pos[test_idx[i],t].reshape(lafan_dataset.num_joints, 3), target_pose, stopover_pose, t, skeleton_mocap, save_dir=pred_img_path, prefix='pred')
+                plot_pose_with_stop(start_pose, lafan_dataset.data['global_pos'][test_idx[i], t+from_idx], target_pose, gt_stopover_pose, t, skeleton_mocap, save_dir=gt_img_path, prefix='gt')
 
-            input_img = Image.open(os.path.join(input_img_path, 'input'+str(t)+'.png'), 'r')
-            pred_img = Image.open(os.path.join(pred_img_path, 'pred'+str(t)+'.png'), 'r')
-            gt_img = Image.open(os.path.join(gt_img_path, 'gt'+str(t)+'.png'), 'r')
-            
-            img_aggr_list.append(np.concatenate([input_img, pred_img, gt_img.resize(pred_img.size)], 1))
+                input_img = Image.open(os.path.join(input_img_path, 'input'+str(t)+'.png'), 'r')
+                pred_img = Image.open(os.path.join(pred_img_path, 'pred'+str(t)+'.png'), 'r')
+                gt_img = Image.open(os.path.join(gt_img_path, 'gt'+str(t)+'.png'), 'r')
+                
+                img_aggr_list.append(np.concatenate([input_img, pred_img, gt_img.resize(pred_img.size)], 1))
+
+            write_json(filename=os.path.join(pred_json_path, f'{t:05}.json'), local_q=local_quaternion[t], root_pos=local_positions[t,0], joint_names=joint_names)
+            write_json(filename=os.path.join(gt_json_path, f'{t:05}.json'), local_q=lafan_dataset.data['local_q'][test_idx[i], from_idx + t], root_pos=lafan_dataset.data['global_pos'][test_idx[i], from_idx + t, 0], joint_names=joint_names)
 
         # Save images
-        gif_path = os.path.join(save_path, f'img_{test_idx[i]}.gif')
-        imageio.mimsave(gif_path, img_aggr_list, duration=0.1)
+        if opt.plot_image:
+            gif_path = os.path.join(save_path, f'img_{test_idx[i]}.gif')
+            imageio.mimsave(gif_path, img_aggr_list, duration=0.1)
         print(f"ID {test_idx[i]}: test completed.")
 
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='slerp80_qnorm', help='experiment name')
+    parser.add_argument('--weight', default='2200')
+    parser.add_argument('--exp_name', default='slerp80_qnorm_adamw', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original_80/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
     parser.add_argument('--motion_type', type=str, default='jumps', help='motion type')
+    parser.add_argument('--plot_image', type=bool, default=False, help='plot image')
     opt = parser.parse_args()
     return opt
 

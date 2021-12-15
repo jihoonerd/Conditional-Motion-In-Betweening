@@ -89,7 +89,7 @@ def train(opt, device):
 
     l1_loss = nn.L1Loss()
     optim = AdamW(params=transformer_encoder.parameters(), lr=opt.learning_rate)
-    scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=400, gamma=0.8)
+    scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=100, gamma=0.9)
 
     for epoch in range(1, epochs + 1):
 
@@ -138,7 +138,7 @@ def train(opt, device):
 
                 rot_gt = minibatch_pose_gt[:,:,pos_dim:]
                 rot_gt_reshaped = rot_gt.reshape(rot_gt.shape[0], rot_gt.shape[1], lafan_dataset.num_joints, 4)
-                rot_loss = l1_loss(rot_pred_normalized, rot_gt_reshaped)
+                rot_loss = l1_loss(rot_pred_reshaped, rot_gt_reshaped)
                 recon_rot_loss.append(opt.loss_rot_weight * rot_loss)
 
                 total_g_loss = opt.loss_pos_weight * pos_loss + \
@@ -192,10 +192,10 @@ def parse_opt():
     parser.add_argument('--weights', type=str, default='', help='weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
-    parser.add_argument('--window', type=int, default=50, help='horizon')
+    parser.add_argument('--window', type=int, default=65, help='horizon')
     parser.add_argument('--batch_size', type=int, default=128, help='batch size')
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or -1 or cpu')
+    parser.add_argument('--device', default='0', help='cuda device')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
     parser.add_argument('--save_interval', type=int, default=1, help='Log model after every "save_period" epoch')
@@ -204,7 +204,7 @@ def parse_opt():
     parser.add_argument('--loss_pos_weight', type=float, default=0.03, help='loss_pos_weight')
     parser.add_argument('--loss_rot_weight', type=float, default=1.0, help='loss_rot_weight')
     parser.add_argument('--from_idx', type=int, default=9, help='from idx')
-    parser.add_argument('--target_idx', type=int, default=48, help='target idx')
+    parser.add_argument('--target_idx', type=int, default=38, help='target idx')
     parser.add_argument('--interpolation', type=str, default='slerp', help='interpolation')
     opt = parser.parse_args()
     return opt
