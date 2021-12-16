@@ -2,7 +2,7 @@
 
 Official implementation of paper: Conditional Motion In-betweeening.
 
-[Paepr]() | [Project Page]() | [YouTube](https://youtu.be/nEzzzBeek_E )
+[Paepr]() | [Project Page](https://jihoonerd.github.io/Conditional-Motion-In-Betweening/) | [YouTube](https://youtu.be/nEzzzBeek_E )
 
 <p align="center">
   <img src="assets/graphical_abstract.jpg" alt="Graphical Abstract"/>
@@ -14,6 +14,7 @@ This repo is tested on following environment:
 
 * Ubuntu 20.04
 * Python >= 3.7
+* PyTorch == 1.10.1
 * Cuda V11.3.109
 
 ## Install
