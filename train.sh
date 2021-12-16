@@ -1,0 +1,16 @@
+python trainer.py \
+	--processed_data_dir="processed_data_80/" \
+	--window=90 \
+	--batch_size=32 \
+	--epochs=5000 \
+	--device=0 \
+	--entity=cmib_exp \
+	--exp_name="cmib_80" \
+	--save_interval=50 \
+	--learning_rate=0.0001 \
+	--loss_cond_weight=1.5 \
+	--loss_pos_weight=0.05 \
+	--loss_rot_weight=2.0 \
+	--from_idx=9 \
+	--target_idx=88 \
+	--interpolation='slerp'

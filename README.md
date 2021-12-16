@@ -35,13 +35,33 @@ This repo is tested on following environment:
 
 You can download trained weights at [here](https://drive.google.com/drive/folders/1_cAhuBxbic3rgPdyrR49kvMnA263bYmi?usp=sharing).
 
-
 ## Train from Scratch
 
+Trining script is `trainer.py`.
+
+```bash
+python trainer.py \
+	--processed_data_dir="processed_data_80/" \
+	--window=90 \
+	--batch_size=32 \
+	--epochs=5000 \
+	--device=0 \
+	--entity=cmib_exp \
+	--exp_name="cmib_80" \
+	--save_interval=50 \
+	--learning_rate=0.0001 \
+	--loss_cond_weight=1.5 \
+	--loss_pos_weight=0.05 \
+	--loss_rot_weight=2.0 \
+	--from_idx=9 \
+	--target_idx=88 \
+	--interpolation='slerp'
+
+```
 
 ## Inference
 
-You will use `run_cmib.py` for inference. Please refer to help page of`run_cmib.py` for more details.
+You can use `run_cmib.py` for inference. Please refer to help page of `run_cmib.py` for more details.
 
 ```python
 python run_cmib.py --help
