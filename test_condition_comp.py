@@ -144,12 +144,10 @@ def test(opt, device):
 
             output = cond_output
 
-            # TODO: Start-End position replacement
             pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(1,horizon-1,22,3)
             global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
             pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec).detach().numpy()
 
-            # Replace start/end with gt
             gt_global_pos = lafan_dataset.data['global_pos'][test_idx[i]:test_idx[i]+1, from_idx:target_idx+1].reshape(1, -1, lafan_dataset.num_joints, 3)
             pred_global_pos[0,0] = gt_global_pos[0,0] 
             pred_global_pos[0,-1] = gt_global_pos[0,-1]
@@ -186,7 +184,7 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='slerp30_qnorm', help='experiment name')
+    parser.add_argument('--exp_name', default='slerp30_qnorm_adamw', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/TEST_WALK', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_test_walk/', help='path to save pickled processed data')
