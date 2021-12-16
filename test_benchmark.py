@@ -41,7 +41,7 @@ def test(opt, device):
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
     test_window = ckpt['horizon'] - 1 + 10
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, device=device, window=65)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, device=device, window=test_window)
 
     # Extract stats
     train_actors = ['subject1', 'subject2', 'subject3', 'subject4']
@@ -195,11 +195,11 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='final_80_v1', help='experiment name')
-    parser.add_argument('--weight', default='460')
+    parser.add_argument('--exp_name', default='final_120_v3', help='experiment name')
+    parser.add_argument('--weight', default='latest')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data_original_80/', help='path to save pickled processed data')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_original_120/', help='path to save pickled processed data')
     opt = parser.parse_args()
     return opt
 
