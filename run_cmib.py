@@ -14,10 +14,9 @@ from cmib.data.utils import write_json
 from cmib.lafan1.utils import quat_ik
 from cmib.model.network import TransformerModel
 from cmib.model.preprocess import (lerp_input_repr, replace_constant,
-                                  slerp_input_repr, vectorize_representation)
-from cmib.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets, joint_names,
-                                sk_parents)
-
+                                   slerp_input_repr, vectorize_representation)
+from cmib.model.skeleton import (Skeleton, joint_names, sk_joints_to_remove,
+                                 sk_offsets, sk_parents)
 from cmib.vis.pose import plot_pose_with_stop
 
 
