@@ -41,7 +41,11 @@ You can download trained weights at [here](https://drive.google.com/drive/folder
 
 ## Inference
 
+You will use `run_cmib.py` for inference. Please refer to help page of`run_cmib.py` for more details.
 
+```python
+python run_cmib.py --help
+```
 
 ## Author
 

@@ -50,9 +50,7 @@ def test(opt, device):
     horizon = ckpt['horizon']
     print(f"HORIZON: {horizon}")
 
-    test_idx = [950]
-    # for i in range(1, 40):
-    #     test_idx.append(i * 50)
+    test_idx = [950, 1140, 2100]
 
     # Extract dimension from processed data
     pos_dim = lafan_dataset.num_joints * 3
@@ -65,13 +63,7 @@ def test(opt, device):
 
     # Replace testing inputs
     fixed = 0
-
     global_pos, global_q = skeleton_mocap.forward_kinematics_with_rotation(local_q_normalized, root_pos)
-
-    # for i in test_idx:
-    #     global_pos[i,fixed] = global_pos[i+85,17]
-    #     global_q[i,fixed] = global_q[i+85,17]
-    # global_pos[:,fixed] += torch.Tensor([0,30,0]).expand(global_pos.size(0),lafan_dataset.num_joints,3)
 
     interpolation = ckpt['interpolation']
     print(f"Interpolation Mode: {interpolation}")
@@ -142,10 +134,8 @@ def test(opt, device):
 
         # Replace start/end with gt
         pred_global_pos[test_idx[i], 0] = start_pose
-        pred_global_pos[test_idx[i], -1] = target_pose
 
         gpos = pred_global_pos[test_idx[i]]
-
         grot = pred_global_rot_normalized[test_idx[i]]
 
         local_quaternion_stopover, local_positions_stopover = quat_ik(stopover_rot.detach().numpy(), stopover_pose.detach().numpy(), parents=skeleton_mocap.parents())
@@ -190,11 +180,11 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--weight', default='2200')
-    parser.add_argument('--exp_name', default='slerp80_qnorm_adamw', help='experiment name')
+    parser.add_argument('--weight', default='latest')
+    parser.add_argument('--exp_name', default='exp', help='experiment name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data_original_80/', help='path to save pickled processed data')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_80/', help='path to save pickled processed data')
     parser.add_argument('--save_path', type=str, default='runs/test', help='path to save model')
     parser.add_argument('--motion_type', type=str, default='jumps', help='motion type')
     parser.add_argument('--plot_image', type=bool, default=False, help='plot image')
