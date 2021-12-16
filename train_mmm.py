@@ -5,22 +5,20 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+import wandb
 import yaml
 from sklearn.preprocessing import LabelEncoder
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, TensorDataset
-from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
-import wandb
 from cmib.data.lafan1_dataset import LAFAN1Dataset
-from cmib.data.utils import flip_bvh
+from cmib.data.utils import flip_bvh, increment_path
 from cmib.model.network import TransformerModel
 from cmib.model.preprocess import (lerp_input_repr, replace_constant,
-                                  slerp_input_repr, vectorize_representation)
+                                   slerp_input_repr, vectorize_representation)
 from cmib.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
-                                sk_parents)
-from utils.general import increment_path
+                                 sk_parents)
 
 
 def train(opt, device):
@@ -38,8 +36,7 @@ def train(opt, device):
     save_interval = opt.save_interval
                           
     # Loggers
-    summary_writer = SummaryWriter(str(save_dir))
-    wandb.init(config=opt, project="RMIB-InfoGAN", entity=opt.entity, name=opt.exp_name, dir=opt.save_dir)
+    wandb.init(config=opt, project=opt.wandb_pj_name, entity=opt.entity, name=opt.exp_name, dir=opt.save_dir)
 
     # Load Skeleton
     skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
@@ -52,8 +49,7 @@ def train(opt, device):
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
     lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, device=device, window=opt.window)
     
-    # Replace to noise for inbetweening frames
-    from_idx, target_idx = opt.from_idx, opt.target_idx  # default: 9-38 (30 frames), max: 48
+    from_idx, target_idx = opt.from_idx, opt.target_idx
     horizon = target_idx - from_idx + 1
     print(f"Horizon: {horizon}")
     horizon += 1 # Add one for conditioning token
@@ -161,10 +157,7 @@ def train(opt, device):
             "Train/Loss/Rotatation Loss": torch.stack(recon_rot_loss).mean().item(),
             "Train/Loss/Total Loss": torch.stack(total_loss_list).mean().item(),
         }
-
-        for k, v in log_dict.items():
-            summary_writer.add_scalar(k, v, epoch)
-        wandb.log(log_dict)        
+        wandb.log(log_dict)
 
         # Save model
         if (epoch % save_interval) == 0:
@@ -189,22 +182,22 @@ def train(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--weights', type=str, default='', help='weights path')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data_original/', help='path to save pickled processed data')
-    parser.add_argument('--window', type=int, default=65, help='horizon')
-    parser.add_argument('--batch_size', type=int, default=128, help='batch size')
-    parser.add_argument('--epochs', type=int, default=1000)
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_80/', help='path to save pickled processed data')
+    parser.add_argument('--window', type=int, default=90, help='horizon')
+    parser.add_argument('--wandb_pj_name', type=str, default='cmib_train', help='project name')
+    parser.add_argument('--batch_size', type=int, default=32, help='batch size')
+    parser.add_argument('--epochs', type=int, default=3000)
     parser.add_argument('--device', default='0', help='cuda device')
     parser.add_argument('--entity', default=None, help='W&B entity')
     parser.add_argument('--exp_name', default='exp', help='save to project/name')
-    parser.add_argument('--save_interval', type=int, default=1, help='Log model after every "save_period" epoch')
+    parser.add_argument('--save_interval', type=int, default=50, help='Log model after every "save_period" epoch')
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='generator_learning_rate')
-    parser.add_argument('--loss_cond_weight', type=float, default=2.0, help='loss_cond_weight')
-    parser.add_argument('--loss_pos_weight', type=float, default=0.03, help='loss_pos_weight')
-    parser.add_argument('--loss_rot_weight', type=float, default=1.0, help='loss_rot_weight')
+    parser.add_argument('--loss_cond_weight', type=float, default=1.5, help='loss_cond_weight')
+    parser.add_argument('--loss_pos_weight', type=float, default=0.05, help='loss_pos_weight')
+    parser.add_argument('--loss_rot_weight', type=float, default=2.0, help='loss_rot_weight')
     parser.add_argument('--from_idx', type=int, default=9, help='from idx')
-    parser.add_argument('--target_idx', type=int, default=38, help='target idx')
+    parser.add_argument('--target_idx', type=int, default=88, help='target idx')
     parser.add_argument('--interpolation', type=str, default='slerp', help='interpolation')
     opt = parser.parse_args()
     return opt

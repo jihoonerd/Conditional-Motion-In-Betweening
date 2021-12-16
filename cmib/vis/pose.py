@@ -18,31 +18,35 @@ def project_root_position(position_arr: np.array, file_name: str):
 
     root_joints = position_arr[:, :, 0]
 
-    x_pos = root_joints[:,:,0]
-    y_pos = root_joints[:,:,2]
+    x_pos = root_joints[:, :, 0]
+    y_pos = root_joints[:, :, 2]
 
     fig = plt.figure()
 
     for i in range(x_pos.shape[1]):
-        
+
         if i == 0:
-            plt.scatter(x_pos[:,i], y_pos[:,i], c='b')
+            plt.scatter(x_pos[:, i], y_pos[:, i], c="b")
         elif i == x_pos.shape[1] - 1:
-            plt.scatter(x_pos[:,i], y_pos[:,i], c='r')
+            plt.scatter(x_pos[:, i], y_pos[:, i], c="r")
         else:
-            plt.scatter(x_pos[:,i], y_pos[:,i], c='k', marker='*', s=1)
+            plt.scatter(x_pos[:, i], y_pos[:, i], c="k", marker="*", s=1)
 
     plt.title(f"Root Position: {file_name}")
     plt.xlabel("X Axis")
     plt.ylabel("Y Axis")
-    plt.xlim((-300,300))
-    plt.ylim((-300,300))
+    plt.xlim((-300, 300))
+    plt.ylim((-300, 300))
     plt.grid()
     plt.savefig(f"{file_name}.png", dpi=200)
 
 
 def plot_single_pose(
-    pose, frame_idx, skeleton, save_dir, prefix,
+    pose,
+    frame_idx,
+    skeleton,
+    save_dir,
+    prefix,
 ):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
@@ -85,10 +89,15 @@ def plot_single_pose(
     plt.savefig(os.path.join(save_dir, prefix + str(frame_idx) + ".png"), dpi=60)
     plt.close()
 
-    
 
 def plot_pose(
-    start_pose, inbetween_pose, target_pose, frame_idx, skeleton, save_dir, prefix,
+    start_pose,
+    inbetween_pose,
+    target_pose,
+    frame_idx,
+    skeleton,
+    save_dir,
+    prefix,
 ):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
@@ -157,7 +166,14 @@ def plot_pose(
 
 
 def plot_pose_with_stop(
-    start_pose, inbetween_pose, target_pose, stopover, frame_idx, skeleton, save_dir, prefix,
+    start_pose,
+    inbetween_pose,
+    target_pose,
+    stopover,
+    frame_idx,
+    skeleton,
+    save_dir,
+    prefix,
 ):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")

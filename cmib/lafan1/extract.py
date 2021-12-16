@@ -200,26 +200,32 @@ def get_lafan1_set(bvh_path, actors, window=50, offset=20, train=True, stats=Fal
             seq_name = file_info[0]
             subject = file_info[1]
 
-            if (not train) and (file_info[-1] == 'LRflip'):
+            if (not train) and (file_info[-1] == "LRflip"):
                 continue
 
-            if stats and (file_info[-1] == 'LRflip'):
+            if stats and (file_info[-1] == "LRflip"):
                 continue
 
             # seq_name, subject = ntpath.basename(file[:-4]).split("_")
             if subject in actors:
-                print('Processing file {}'.format(file))
+                print("Processing file {}".format(file))
                 seq_path = os.path.join(bvh_path, file)
                 anim = read_bvh(seq_path)
 
                 # Sliding windows
                 i = 0
-                while i+window < anim.pos.shape[0]:
-                    q, x = utils.quat_fk(anim.quats[i: i+window], anim.pos[i: i+window], anim.parents)
+                while i + window < anim.pos.shape[0]:
+                    q, x = utils.quat_fk(
+                        anim.quats[i : i + window],
+                        anim.pos[i : i + window],
+                        anim.parents,
+                    )
                     # Extract contacts
-                    c_l, c_r = utils.extract_feet_contacts(x, [3, 4], [7, 8], velfactor=0.02)
-                    X.append(anim.pos[i: i+window])
-                    Q.append(anim.quats[i: i+window])
+                    c_l, c_r = utils.extract_feet_contacts(
+                        x, [3, 4], [7, 8], velfactor=0.02
+                    )
+                    X.append(anim.pos[i : i + window])
+                    Q.append(anim.quats[i : i + window])
                     seq_names.append(seq_name)
                     subjects.append(subjects)
                     contacts_l.append(c_l)
@@ -248,10 +254,12 @@ def get_train_stats(bvh_folder, train_set):
     Extract the same training set as in the paper in order to compute the normalizing statistics
     :return: Tuple of (local position mean vector, local position standard deviation vector, local joint offsets tensor)
     """
-    print('Building the train set...')
-    xtrain, qtrain, parents, _, _, _ = get_lafan1_set(bvh_folder, train_set, window=50, offset=20, train=True, stats=True)
+    print("Building the train set...")
+    xtrain, qtrain, parents, _, _, _ = get_lafan1_set(
+        bvh_folder, train_set, window=50, offset=20, train=True, stats=True
+    )
 
-    print('Computing stats...\n')
+    print("Computing stats...\n")
     # Joint offsets : are constant, so just take the first frame:
     offsets = xtrain[0:1, 0:1, 1:, :]  # Shape : (1, 1, J, 3)
 
@@ -259,7 +267,15 @@ def get_train_stats(bvh_folder, train_set):
     q_glbl, x_glbl = utils.quat_fk(qtrain, xtrain, parents)
 
     # Global positions stats:
-    x_mean = np.mean(x_glbl.reshape([x_glbl.shape[0], x_glbl.shape[1], -1]).transpose([0, 2, 1]), axis=(0, 2), keepdims=True)
-    x_std = np.std(x_glbl.reshape([x_glbl.shape[0], x_glbl.shape[1], -1]).transpose([0, 2, 1]), axis=(0, 2), keepdims=True)
+    x_mean = np.mean(
+        x_glbl.reshape([x_glbl.shape[0], x_glbl.shape[1], -1]).transpose([0, 2, 1]),
+        axis=(0, 2),
+        keepdims=True,
+    )
+    x_std = np.std(
+        x_glbl.reshape([x_glbl.shape[0], x_glbl.shape[1], -1]).transpose([0, 2, 1]),
+        axis=(0, 2),
+        keepdims=True,
+    )
 
     return x_mean, x_std, offsets

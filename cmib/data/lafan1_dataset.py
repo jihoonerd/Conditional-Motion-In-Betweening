@@ -1,12 +1,19 @@
 from torch.utils.data import Dataset
 from cmib.lafan1 import extract, utils
 import numpy as np
-import torch
 import pickle
-import os 
+import os
+
 
 class LAFAN1Dataset(Dataset):
-    def __init__(self, lafan_path: str, processed_data_dir : str, train: bool, device: str, window: int=65):
+    def __init__(
+        self,
+        lafan_path: str,
+        processed_data_dir: str,
+        train: bool,
+        device: str,
+        window: int = 65,
+    ):
         self.lafan_path = lafan_path
 
         self.train = train
@@ -23,15 +30,15 @@ class LAFAN1Dataset(Dataset):
         self.offset = 20 if self.train else 40
 
         self.device = device
-        
+
         pickle_name = "processed_train_data.pkl" if train else "processed_test_data.pkl"
 
         if pickle_name in os.listdir(processed_data_dir):
-            with open(os.path.join(processed_data_dir, pickle_name), 'rb') as f:
+            with open(os.path.join(processed_data_dir, pickle_name), "rb") as f:
                 self.data = pickle.load(f)
-        else: 
+        else:
             self.data = self.load_lafan()  # Call this last
-            with open(os.path.join(processed_data_dir, pickle_name), 'wb') as f:
+            with open(os.path.join(processed_data_dir, pickle_name), "wb") as f:
                 pickle.dump(self.data, f, pickle.HIGHEST_PROTOCOL)
 
     @property
@@ -80,7 +87,7 @@ class LAFAN1Dataset(Dataset):
         input_data["global_pos"] = global_pos[
             :, :, :, :
         ]  # global position (N, 50, 22, 30) why not just global_pos
-        input_data['seq_names'] = seq_names
+        input_data["seq_names"] = seq_names
         return input_data
 
     def __len__(self):

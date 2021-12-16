@@ -1,8 +1,5 @@
-import pickle as pkl
 import numpy as np
-import zipfile
 import os
-from . import extract
 from . import utils
 import torch
 
@@ -37,7 +34,6 @@ def npss(gt_seq, pred_seq):
     power_weighted_emd = torch.sum(emd * gt_total_power) / torch.sum(gt_total_power)
 
     return power_weighted_emd
-
 
 
 def fast_npss(gt_seq, pred_seq):

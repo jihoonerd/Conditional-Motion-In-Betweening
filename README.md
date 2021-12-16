@@ -36,7 +36,11 @@ This repo is tested on following environment:
 You can download trained weights at [here](https://drive.google.com/drive/folders/1_cAhuBxbic3rgPdyrR49kvMnA263bYmi?usp=sharing).
 
 
-## How to Use
+## Train from Scratch
+
+
+## Inference
+
 
 
 ## Author
