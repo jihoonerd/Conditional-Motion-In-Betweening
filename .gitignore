@@ -15,6 +15,7 @@ processed_data*/
 run_training.sh
 run_test.sh
 emotion-mocap-dataset/
+slerp*/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

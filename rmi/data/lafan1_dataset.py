@@ -6,7 +6,7 @@ import pickle
 import os 
 
 class LAFAN1Dataset(Dataset):
-    def __init__(self, lafan_path: str, processed_data_dir : str, train: bool, device: str, window: int=50):
+    def __init__(self, lafan_path: str, processed_data_dir : str, train: bool, device: str, window: int=65):
         self.lafan_path = lafan_path
 
         self.train = train
