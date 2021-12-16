@@ -13,7 +13,7 @@ cloudpickle==1.6.0
 colorcet==2.0.6
 configparser==5.0.2
 cycler==0.10.0
-dask==2021.8.1
+dask==2021.10.0
 datashader==0.13.0
 datashape==0.5.2
 debugpy==1.5.1
