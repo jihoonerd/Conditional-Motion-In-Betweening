@@ -2,7 +2,13 @@
 
 Official implementation of paper: Conditional Motion In-betweeening.
 
+[Paepr]() | [Project Page]()
+
 ![abs](assets/graphical_abstract.jpg)
+
+## Video
+
+[![youtube](assets/TitlePage.png)](https://youtu.be/nEzzzBeek_E "CMIB")
 
 ## Environments
 
@@ -32,3 +38,9 @@ You can download trained weights at [here](https://drive.google.com/drive/folder
 
 
 ## How to Use
+
+
+## Author
+
+* [Jihoon Kim](https://github.com/jihoonerd)
+* [Taehyun Byun](https://github.com/childtoy)
