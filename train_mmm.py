@@ -13,12 +13,12 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 import wandb
-from rmi.data.lafan1_dataset import LAFAN1Dataset
-from rmi.data.utils import flip_bvh
-from rmi.model.network import TransformerModel
-from rmi.model.preprocess import (lerp_input_repr, replace_constant,
+from cmib.data.lafan1_dataset import LAFAN1Dataset
+from cmib.data.utils import flip_bvh
+from cmib.model.network import TransformerModel
+from cmib.model.preprocess import (lerp_input_repr, replace_constant,
                                   slerp_input_repr, vectorize_representation)
-from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
+from cmib.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
 from utils.general import increment_path
 

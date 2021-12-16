@@ -9,16 +9,16 @@ import torch.nn as nn
 from PIL import Image
 from sklearn.preprocessing import LabelEncoder
 
-from rmi.data.lafan1_dataset import LAFAN1Dataset
-from rmi.data.utils import write_json
-from rmi.lafan1.utils import quat_ik
-from rmi.model.network import TransformerModel
-from rmi.model.preprocess import (lerp_input_repr, replace_constant,
+from cmib.data.lafan1_dataset import LAFAN1Dataset
+from cmib.data.utils import write_json
+from cmib.lafan1.utils import quat_ik
+from cmib.model.network import TransformerModel
+from cmib.model.preprocess import (lerp_input_repr, replace_constant,
                                   slerp_input_repr, vectorize_representation)
-from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets, joint_names,
+from cmib.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets, joint_names,
                                 sk_parents)
 
-from rmi.vis.pose import plot_pose_with_stop
+from cmib.vis.pose import plot_pose_with_stop
 
 
 def test(opt, device):

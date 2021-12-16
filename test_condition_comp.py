@@ -6,15 +6,15 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from rmi.data.lafan1_dataset import LAFAN1Dataset
-from rmi.data.utils import drop_end_quat
-from rmi.model.network import TransformerModel
-from rmi.model.preprocess import (lerp_input_repr, replace_constant, slerp_input_repr,
+from cmib.data.lafan1_dataset import LAFAN1Dataset
+from cmib.data.utils import drop_end_quat
+from cmib.model.network import TransformerModel
+from cmib.model.preprocess import (lerp_input_repr, replace_constant, slerp_input_repr,
                                   vectorize_representation)
-from rmi.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
+from cmib.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
                                 sk_parents)
 from sklearn.preprocessing import LabelEncoder
-from rmi.lafan1 import extract
+from cmib.lafan1 import extract
 
 
 def test(opt, device):
