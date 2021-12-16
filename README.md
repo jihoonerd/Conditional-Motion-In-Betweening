@@ -2,7 +2,7 @@
 
 Official implementation of paper: Conditional Motion In-betweeening.
 
-[Paepr]() | [Project Page](https://jihoonerd.github.io/Conditional-Motion-In-Betweening/) | [YouTube](https://youtu.be/nEzzzBeek_E )
+[Paper]() | [Project Page](https://jihoonerd.github.io/Conditional-Motion-In-Betweening/) | [YouTube](https://youtu.be/nEzzzBeek_E )
 
 <p align="center">
   <img src="assets/graphical_abstract.jpg" alt="Graphical Abstract"/>
@@ -33,7 +33,7 @@ This repo is tested on following environment:
 
 ## Trained Weights
 
-You can download trained weights at [here](https://drive.google.com/drive/folders/1_cAhuBxbic3rgPdyrR49kvMnA263bYmi?usp=sharing).
+You can download trained weights from [here](https://drive.google.com/drive/folders/1_cAhuBxbic3rgPdyrR49kvMnA263bYmi?usp=sharing).
 
 ## Train from Scratch
 
