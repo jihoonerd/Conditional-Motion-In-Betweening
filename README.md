@@ -2,13 +2,11 @@
 
 Official implementation of paper: Conditional Motion In-betweeening.
 
-[Paepr]() | [Project Page]()
+[Paepr]() | [Project Page]() | [YouTube](https://youtu.be/nEzzzBeek_E )
 
-![abs](assets/graphical_abstract.jpg)
-
-## Video
-
-[![youtube](assets/TitlePage.png)](https://youtu.be/nEzzzBeek_E "CMIB")
+<p align="center">
+  <img src="assets/graphical_abstract.jpg" alt="Graphical Abstract"/>
+</p>
 
 ## Environments
 
