@@ -1,16 +1,17 @@
 python trainer.py \
-	--processed_data_dir="processed_data_80/" \
-	--window=90 \
+	--data_path="AMASS/HumanEva" \
+	--dataset="HumanEva" \
+	--processed_data_dir="processed_data_human_eva_40/" \
+	--window=50 \
 	--batch_size=32 \
 	--epochs=5000 \
-	--device=0 \
-	--entity=cmib_exp \
-	--exp_name="cmib_80" \
-	--save_interval=50 \
+	--device=3 \
+	--exp_name="HumanEva_40" \
+	--save_interval=20 \
 	--learning_rate=0.0001 \
 	--loss_cond_weight=1.5 \
 	--loss_pos_weight=0.05 \
 	--loss_rot_weight=2.0 \
 	--from_idx=9 \
-	--target_idx=88 \
+	--target_idx=48 \
 	--interpolation='slerp'

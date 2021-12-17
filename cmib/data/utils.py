@@ -114,3 +114,10 @@ def increment_path(path, exist_ok=False, sep="", mkdir=False):
     if not dir.exists() and mkdir:
         dir.mkdir(parents=True, exist_ok=True)  # make directory
     return path
+
+
+def process_seq_names(seq_names, dataset):
+
+    if dataset == 'HumanEva':
+        seq_names = [x[:-1] for x in seq_names]
+    return seq_names

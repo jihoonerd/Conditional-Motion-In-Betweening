@@ -13,15 +13,25 @@ class LAFAN1Dataset(Dataset):
         train: bool,
         device: str,
         window: int = 65,
+        dataset: str = 'LAFAN'
     ):
         self.lafan_path = lafan_path
 
         self.train = train
         # 4.3: It contains actions performedby 5 subjects, with Subject 5 used as the test set.
-        self.actors = (
-            ["subject1", "subject2", "subject3", "subject4"] if train else ["subject5"]
-        )
+        self.dataset = dataset
 
+        if self.dataset == 'LAFAN':
+            self.actors = (
+                ["subject1", "subject2", "subject3", "subject4"] if train else ["subject5"]
+            )
+        elif self.dataset == 'HumanEva':
+            self.actors = (
+                ["subject1", "subject2"] if train else ["subject3"]
+            )
+        else:
+            ValueError("Invalid Dataset")
+        
         # 4.3: ... The training statistics for normalization are computed on windows of 50 frames offset by 20 frames.
         self.window = window
 
@@ -62,7 +72,7 @@ class LAFAN1Dataset(Dataset):
         # X and Q are local position/quaternion. Motions are rotated to make 10th frame facing X+ position.
         # Refer to paper 3.1 Data formatting
         X, Q, parents, contacts_l, contacts_r, seq_names = extract.get_lafan1_set(
-            self.lafan_path, self.actors, self.window, self.offset, self.train
+            self.lafan_path, self.actors, self.window, self.offset, self.train, self.dataset
         )
 
         # Retrieve global representations. (global quaternion, global positions)

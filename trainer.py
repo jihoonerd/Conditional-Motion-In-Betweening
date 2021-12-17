@@ -13,16 +13,16 @@ from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
 from cmib.data.lafan1_dataset import LAFAN1Dataset
-from cmib.data.utils import flip_bvh, increment_path
+from cmib.data.utils import flip_bvh, increment_path, process_seq_names
 from cmib.model.network import TransformerModel
 from cmib.model.preprocess import (lerp_input_repr, replace_constant,
                                    slerp_input_repr, vectorize_representation)
-from cmib.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
-                                 sk_parents)
+from cmib.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets, sk_parents, amass_offsets)
 
 
 def train(opt, device):
 
+    print(f"[DATASET: {opt.dataset}]")
     # Prepare Directories
     save_dir = Path(opt.save_dir)
     wdir = save_dir / 'weights'
@@ -39,15 +39,17 @@ def train(opt, device):
     wandb.init(config=opt, project=opt.wandb_pj_name, entity=opt.entity, name=opt.exp_name, dir=opt.save_dir)
 
     # Load Skeleton
-    skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
+    offset = sk_offsets if opt.dataset == 'LAFAN' else amass_offsets
+    skeleton_mocap = Skeleton(offsets=offset, parents=sk_parents, device=device)
     skeleton_mocap.remove_joints(sk_joints_to_remove)
 
     # Flip, Load and preprocess data. It utilizes LAFAN1 utilities
-    flip_bvh(opt.data_path, skip='subject5')
+    if opt.dataset == 'LAFAN':
+        flip_bvh(opt.data_path, skip='subject5')
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, device=device, window=opt.window)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=True, device=device, window=opt.window, dataset=opt.dataset)
     
     from_idx, target_idx = opt.from_idx, opt.target_idx
     horizon = target_idx - from_idx + 1
@@ -65,7 +67,10 @@ def train(opt, device):
     global_pose_vec_gt = vectorize_representation(global_pos, global_q)
     global_pose_vec_input = global_pose_vec_gt.clone().detach()
 
-    seq_categories = [x[:-1] for x in lafan_dataset.data['seq_names']]
+    if opt.dataset == 'LAFAN':
+        seq_categories = [x[:-1] for x in lafan_dataset.data['seq_names']]
+    else:
+        seq_categories = process_seq_names(lafan_dataset.data['seq_names'], dataset=opt.dataset)
 
     le = LabelEncoder()
     le_np = le.fit_transform(seq_categories)
@@ -183,6 +188,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
+    parser.add_argument('--dataset', type=str, default='LAFAN', help='Dataset name')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_80/', help='path to save pickled processed data')
     parser.add_argument('--window', type=int, default=90, help='horizon')
     parser.add_argument('--wandb_pj_name', type=str, default='cmib_train', help='project name')

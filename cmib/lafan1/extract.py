@@ -168,7 +168,7 @@ def read_bvh(filename, start=None, end=None, order=None):
     return Anim(rotations, positions, offsets, parents, names)
 
 
-def get_lafan1_set(bvh_path, actors, window=50, offset=20, train=True, stats=False):
+def get_lafan1_set(bvh_path, actors, window=50, offset=20, train=True, stats=False, datset='LAFAN'):
     """
     Extract the same test set as in the article, given the location of the BVH files.
 
