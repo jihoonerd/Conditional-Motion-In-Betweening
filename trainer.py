@@ -76,6 +76,7 @@ def train(opt, device):
     le_np = le.fit_transform(seq_categories)
     seq_labels = torch.Tensor(le_np).type(torch.int64).unsqueeze(1).to(device)
     np.save(f'{save_dir}/le_classes_.npy', le.classes_)
+    num_labels = len(seq_labels.squeeze().unique())
 
     tensor_dataset = TensorDataset(global_pose_vec_input, global_pose_vec_gt, seq_labels)
     lafan_data_loader = DataLoader(tensor_dataset, batch_size=opt.batch_size, shuffle=True, num_workers=0)
@@ -85,7 +86,7 @@ def train(opt, device):
     repr_dim = pos_dim + rot_dim
     nhead = 7 # repr_dim = 154
 
-    transformer_encoder = TransformerModel(seq_len=horizon, d_model=repr_dim, nhead=nhead, d_hid=2048, nlayers=8, dropout=0.05, out_dim=repr_dim)
+    transformer_encoder = TransformerModel(seq_len=horizon, d_model=repr_dim, nhead=nhead, d_hid=2048, nlayers=8, dropout=0.05, out_dim=repr_dim, num_labels=num_labels)
     transformer_encoder.to(device)
 
     l1_loss = nn.L1Loss()

@@ -14,6 +14,7 @@ class TransformerModel(nn.Module):
         nlayers: int,
         dropout: float = 0.5,
         out_dim=91,
+        num_labels=15
     ):
         super().__init__()
         self.model_type = "Transformer"
@@ -22,7 +23,7 @@ class TransformerModel(nn.Module):
         self.nhead = nhead
         self.d_hid = d_hid
         self.nlayers = nlayers
-        self.cond_emb = nn.Embedding(15, d_model)
+        self.cond_emb = nn.Embedding(num_labels, d_model)
         self.pos_embedding = PositionalEmbedding(seq_len=seq_len, d_model=d_model)
         encoder_layers = TransformerEncoderLayer(
             d_model, nhead, d_hid, dropout, activation="gelu"

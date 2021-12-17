@@ -29,7 +29,7 @@ This repo is tested on following environment:
    ```
    With this, you will have unpacked LAFAN dataset under `ubisoft-laforge-animation-dataset` folder.
 
-3. Now, install packages listed in `requirements.txt`. Use appropriate `pytorch` version depending on your device(CPU/GPU).
+3. Install appropriate `pytorch` version depending on your device(CPU/GPU), then install packages listed in `requirements.txt`. .
 
 ## Trained Weights
 
