@@ -29,6 +29,10 @@ class LAFAN1Dataset(Dataset):
             self.actors = (
                 ["subject1", "subject2"] if train else ["subject3"]
             )
+        elif self.dataset in ['HUMAN4D']:
+            self.actors = (
+                ["subject1", "subject2", "subject3", "subject4", "subject5", "subject6", "subject7"] if train else ["subject8"]
+            )
         else:
             ValueError("Invalid Dataset")
         

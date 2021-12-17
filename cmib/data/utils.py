@@ -134,6 +134,10 @@ def process_seq_names(seq_names, dataset):
             elif 'ulr' in seq:
                 pr_seq = 'ulr'
             else:
-                ValueError()
+                ValueError('Invlaid seq name')
             processed_seqname.append(pr_seq)
+    elif dataset == 'HUMAN4D':
+        processed_seqname = [x[:-1] for x in seq_names]
+    else:
+        ValueError('Invalid dataset name')
     return processed_seqname
