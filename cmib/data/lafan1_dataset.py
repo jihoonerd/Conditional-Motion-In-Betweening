@@ -25,7 +25,7 @@ class LAFAN1Dataset(Dataset):
             self.actors = (
                 ["subject1", "subject2", "subject3", "subject4"] if train else ["subject5"]
             )
-        elif self.dataset == 'HumanEva':
+        elif self.dataset in ['HumanEva', 'PosePrior']:
             self.actors = (
                 ["subject1", "subject2"] if train else ["subject3"]
             )

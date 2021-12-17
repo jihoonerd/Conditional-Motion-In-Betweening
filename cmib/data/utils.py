@@ -119,5 +119,21 @@ def increment_path(path, exist_ok=False, sep="", mkdir=False):
 def process_seq_names(seq_names, dataset):
 
     if dataset == 'HumanEva':
-        seq_names = [x[:-1] for x in seq_names]
-    return seq_names
+        processed_seqname = [x[:-1] for x in seq_names]
+    elif dataset == 'PosePrior':
+        processed_seqname = []
+        for seq in seq_names:
+            if 'lar' in seq:
+                pr_seq = 'lar'
+            elif 'op' in seq:
+                pr_seq = 'op'
+            elif 'rom' in seq:
+                pr_seq = 'rom'
+            elif 'uar' in seq:
+                pr_seq = 'uar'
+            elif 'ulr' in seq:
+                pr_seq = 'ulr'
+            else:
+                ValueError()
+            processed_seqname.append(pr_seq)
+    return processed_seqname
