@@ -8,6 +8,8 @@ lafan_train*.pkl
 runs/
 wandb/
 processed_data*/
+AMASS/
+*.pkl
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

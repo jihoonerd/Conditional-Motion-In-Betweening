@@ -67,7 +67,6 @@ def test(opt, device):
 
     total_data = lafan_dataset.data['global_pos'].shape[0]
     
-    # Replace with noise to In-betweening Frames
     from_idx, target_idx = ckpt['from_idx'], ckpt['target_idx'] # default: 9-38, max: 48
     horizon = ckpt['horizon']
     print(f"HORIZON: {horizon}")
@@ -115,10 +114,6 @@ def test(opt, device):
     src_mask = torch.zeros((horizon, horizon), device=device).type(torch.bool)
     src_mask = src_mask.to(device)
 
-    seq_categories = [x[:-1] for x in lafan_dataset.data['seq_names']]
-
-    l1_loss = nn.L1Loss()
-
     le = LabelEncoder()
     le.classes_ = np.load(os.path.join(save_dir, 'le_classes_.npy'))
 
@@ -135,14 +130,12 @@ def test(opt, device):
         seq_label = lafan_dataset.data['seq_names'][i][:-1]
         class_id = np.where(le.classes_ == seq_label)[0][0]
 
-        # for class_id in range(len(le.classes_)):
         conditioning_label = torch.Tensor([[class_id]]).type(torch.int64).to(device)
         cond_output, cond_gt = model(pose_vectorized_input[:, test_idx[i]:test_idx[i]+1, :], src_mask, conditioning_label)
         print(f"Condition: {le.classes_[class_id]}")
 
         output = cond_output
 
-        # TODO: Start-End position replacement
         pred_global_pos = output[1:,:,:pos_dim].permute(1,0,2).reshape(1,horizon-1,22,3)
         global_pos_unit_vec = skeleton_mocap.convert_to_unit_offset_mat(pred_global_pos)
         pred_global_pos = skeleton_mocap.convert_to_global_pos(global_pos_unit_vec).detach().numpy()
@@ -195,11 +188,11 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='final_120_v3', help='experiment name')
+    parser.add_argument('--exp_name', default='exp', help='experiment name')
     parser.add_argument('--weight', default='latest')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data_original_120/', help='path to save pickled processed data')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_80/', help='path to save pickled processed data')
     opt = parser.parse_args()
     return opt
 
