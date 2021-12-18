@@ -11,6 +11,7 @@ from sklearn.preprocessing import LabelEncoder
 
 from cmib.data.lafan1_dataset import LAFAN1Dataset
 from cmib.lafan1 import benchmarks, extract
+from cmib.data.utils import process_seq_names
 from cmib.model.network import TransformerModel
 from cmib.model.preprocess import (lerp_input_repr, replace_constant,
                                    slerp_input_repr, vectorize_representation)
@@ -124,8 +125,9 @@ def test(opt, device):
 
     le = LabelEncoder()
     le.classes_ = np.load(os.path.join(save_dir, 'le_classes_.npy'))
+    num_labels = len(le.classes_)
 
-    model = TransformerModel(seq_len=ckpt['horizon'], d_model=ckpt['d_model'], nhead=ckpt['nhead'], d_hid=ckpt['d_hid'], nlayers=ckpt['nlayers'], dropout=0.0, out_dim=repr_dim)
+    model = TransformerModel(seq_len=ckpt['horizon'], d_model=ckpt['d_model'], nhead=ckpt['nhead'], d_hid=ckpt['d_hid'], nlayers=ckpt['nlayers'], dropout=0.0, out_dim=repr_dim, num_labels=num_labels)
     model.load_state_dict(ckpt['transformer_encoder_state_dict'])
     model.eval()
 
@@ -134,8 +136,15 @@ def test(opt, device):
 
     pred_rot_npss = []
     for i in range(len(test_idx)):
-        print(f"Processing ID: {test_idx[i]}")        
+        print(f"Processing ID: {test_idx[i]}")
+
         seq_label = lafan_dataset.data['seq_names'][i][:-1]
+
+        if opt.dataset == 'LAFAN':
+            seq_label = [x[:-1] for x in lafan_dataset.data['seq_names']][i]
+        else:
+            seq_label = process_seq_names(lafan_dataset.data['seq_names'], dataset=opt.dataset)[i]
+
         class_id = np.where(le.classes_ == seq_label)[0][0]
 
         conditioning_label = torch.Tensor([[class_id]]).type(torch.int64).to(device)
@@ -196,12 +205,11 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='exp', help='experiment name')
+    parser.add_argument('--exp_name', default='HumanEva_80', help='experiment name')
     parser.add_argument('--weight', default='latest')
-    parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
-    parser.add_argument('--dataset', type=str, default='LAFAN', help='Dataset name')
-    parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data_80/', help='path to save pickled processed data')
+    parser.add_argument('--data_path', type=str, default='AMASS/HumanEva', help='BVH dataset path')
+    parser.add_argument('--dataset', type=str, default='HumanEva', help='Dataset name')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_human_eva_80/', help='path to save pickled processed data')
     opt = parser.parse_args()
     return opt
 
