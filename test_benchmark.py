@@ -14,8 +14,7 @@ from cmib.lafan1 import benchmarks, extract
 from cmib.model.network import TransformerModel
 from cmib.model.preprocess import (lerp_input_repr, replace_constant,
                                    slerp_input_repr, vectorize_representation)
-from cmib.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets,
-                                 sk_parents)
+from cmib.model.skeleton import (Skeleton, sk_joints_to_remove, sk_offsets, sk_parents, amass_offsets)
 
 
 def test(opt, device):
@@ -35,17 +34,26 @@ def test(opt, device):
     print(f"Loaded weight: {weight_path}")
 
     # Load Skeleton
-    skeleton_mocap = Skeleton(offsets=sk_offsets, parents=sk_parents, device=device)
+    offset = sk_offsets if opt.dataset == 'LAFAN' else amass_offsets
+    skeleton_mocap = Skeleton(offsets=offset, parents=sk_parents, device=device)
     skeleton_mocap.remove_joints(sk_joints_to_remove)
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
     test_window = ckpt['horizon'] - 1 + 10
-    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, device=device, window=test_window)
+    lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, device=device, window=test_window, dataset=opt.dataset)
 
     # Extract stats
-    train_actors = ['subject1', 'subject2', 'subject3', 'subject4']
-    bvh_folder = os.path.join('ubisoft-laforge-animation-dataset', 'output', 'BVH')
+    if opt.dataset == 'LAFAN':
+        train_actors = ["subject1", "subject2", "subject3", "subject4"]
+    elif opt.dataset in ['HumanEva', 'PosePrior']:
+        train_actors = ["subject1", "subject2"]
+    elif opt.dataset in ['HUMAN4D']:
+        train_actors = ["subject1", "subject2", "subject3", "subject4", "subject5", "subject6", "subject7"]
+    else:
+        ValueError("Invalid Dataset")
+
+    bvh_folder = opt.data_path
     stats_file = os.path.join(opt.processed_data_dir, 'train_stats.pkl')
 
     if not os.path.exists(stats_file):
@@ -191,6 +199,7 @@ def parse_opt():
     parser.add_argument('--exp_name', default='exp', help='experiment name')
     parser.add_argument('--weight', default='latest')
     parser.add_argument('--data_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH', help='BVH dataset path')
+    parser.add_argument('--dataset', type=str, default='LAFAN', help='Dataset name')
     parser.add_argument('--skeleton_path', type=str, default='ubisoft-laforge-animation-dataset/output/BVH/walk1_subject1.bvh', help='path to reference skeleton')
     parser.add_argument('--processed_data_dir', type=str, default='processed_data_80/', help='path to save pickled processed data')
     opt = parser.parse_args()
