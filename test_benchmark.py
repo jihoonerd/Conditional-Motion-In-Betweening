@@ -145,7 +145,8 @@ def test(opt, device):
         else:
             seq_label = process_seq_names(lafan_dataset.data['seq_names'], dataset=opt.dataset)[i]
 
-        class_id = np.where(le.classes_ == seq_label)[0][0]
+        match_class = np.where(le.classes_ == seq_label)[0]
+        class_id = 0 if len(match_class) == 0 else match_class[0]
 
         conditioning_label = torch.Tensor([[class_id]]).type(torch.int64).to(device)
         cond_output, cond_gt = model(pose_vectorized_input[:, test_idx[i]:test_idx[i]+1, :], src_mask, conditioning_label)
@@ -205,11 +206,11 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='HumanEva_80', help='experiment name')
+    parser.add_argument('--exp_name', default='PosePrior_80', help='experiment name')
     parser.add_argument('--weight', default='latest')
-    parser.add_argument('--data_path', type=str, default='AMASS/HumanEva', help='BVH dataset path')
-    parser.add_argument('--dataset', type=str, default='HumanEva', help='Dataset name')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data_human_eva_80/', help='path to save pickled processed data')
+    parser.add_argument('--data_path', type=str, default='AMASS/PosePrior', help='BVH dataset path')
+    parser.add_argument('--dataset', type=str, default='PosePrior', help='Dataset name')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_poseprior_80/', help='path to save pickled processed data')
     opt = parser.parse_args()
     return opt
 
