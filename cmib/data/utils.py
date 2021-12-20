@@ -118,7 +118,7 @@ def increment_path(path, exist_ok=False, sep="", mkdir=False):
 
 def process_seq_names(seq_names, dataset):
 
-    if dataset == 'HumanEva':
+    if dataset in ['HumanEva', 'HUMAN4D', 'MPI_HDM05']:
         processed_seqname = [x[:-1] for x in seq_names]
     elif dataset == 'PosePrior':
         processed_seqname = []
@@ -136,8 +136,6 @@ def process_seq_names(seq_names, dataset):
             else:
                 ValueError('Invlaid seq name')
             processed_seqname.append(pr_seq)
-    elif dataset == 'HUMAN4D':
-        processed_seqname = [x[:-1] for x in seq_names]
     else:
         ValueError('Invalid dataset name')
     return processed_seqname

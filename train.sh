@@ -1,17 +1,17 @@
 python trainer.py \
-	--data_path="AMASS/HUMAN4D" \
-	--dataset="HUMAN4D" \
-	--processed_data_dir="processed_data_human4d_80/" \
-	--window=90 \
+	--data_path="AMASS/MPI_HDM05" \
+	--dataset="MPI_HDM05" \
+	--processed_data_dir="processed_data_mpi05_60/" \
+	--window=70 \
 	--batch_size=32 \
 	--epochs=5000 \
-	--device=0 \
-	--exp_name="HUMAN4D_80" \
+	--device=1 \
+	--exp_name="MPI_HDM05_60" \
 	--save_interval=20 \
 	--learning_rate=0.0001 \
 	--loss_cond_weight=1.5 \
 	--loss_pos_weight=0.05 \
 	--loss_rot_weight=2.0 \
 	--from_idx=9 \
-	--target_idx=88 \
+	--target_idx=68 \
 	--interpolation='slerp'

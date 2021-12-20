@@ -33,6 +33,10 @@ class LAFAN1Dataset(Dataset):
             self.actors = (
                 ["subject1", "subject2", "subject3", "subject4", "subject5", "subject6", "subject7"] if train else ["subject8"]
             )
+        elif self.dataset in ["MPI_HDM05"]:
+            self.actors = (
+                ["subject1", "subject2", "subject3"] if train else ["subject4"]
+            )
         else:
             ValueError("Invalid Dataset")
         

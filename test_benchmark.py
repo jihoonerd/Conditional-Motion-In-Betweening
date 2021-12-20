@@ -51,6 +51,8 @@ def test(opt, device):
         train_actors = ["subject1", "subject2"]
     elif opt.dataset in ['HUMAN4D']:
         train_actors = ["subject1", "subject2", "subject3", "subject4", "subject5", "subject6", "subject7"]
+    elif opt.dataset in ['MPI_HDM05']:
+        train_actors = ["subject1", "subject2", "subject3"]
     else:
         ValueError("Invalid Dataset")
 
@@ -206,11 +208,11 @@ def test(opt, device):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', default='runs/train', help='project/name')
-    parser.add_argument('--exp_name', default='PosePrior_80', help='experiment name')
+    parser.add_argument('--exp_name', default='HUMAN4D_80', help='experiment name')
     parser.add_argument('--weight', default='latest')
     parser.add_argument('--data_path', type=str, default='AMASS/PosePrior', help='BVH dataset path')
-    parser.add_argument('--dataset', type=str, default='PosePrior', help='Dataset name')
-    parser.add_argument('--processed_data_dir', type=str, default='processed_data_poseprior_80/', help='path to save pickled processed data')
+    parser.add_argument('--dataset', type=str, default='HUMAN4D', help='Dataset name')
+    parser.add_argument('--processed_data_dir', type=str, default='processed_data_human4d_80/', help='path to save pickled processed data')
     opt = parser.parse_args()
     return opt
 
