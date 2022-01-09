@@ -67,6 +67,22 @@ You can use `run_cmib.py` for inference. Please refer to help page of `run_cmib.
 python run_cmib.py --help
 ```
 
+## Citation
+
+* LAFAN1 Dataset
+
+```
+@article{harvey2020robust,
+author    = {Félix G. Harvey and Mike Yurick and Derek Nowrouzezahrai and Christopher Pal},
+title     = {Robust Motion In-Betweening},
+booktitle = {ACM Transactions on Graphics (Proceedings of ACM SIGGRAPH)},
+publisher = {ACM},
+volume    = {39},
+number    = {4},
+year      = {2020}
+}
+```
+
 ## Author
 
 * [Jihoon Kim](https://github.com/jihoonerd)
