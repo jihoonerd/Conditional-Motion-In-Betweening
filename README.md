@@ -10,6 +10,17 @@ Official implementation of paper: Conditional Motion In-betweeening.
 
 <table>
   <tr>
+    <th>in-betweening</th>
+    <th>pose-conditioned</th>
+  </tr>
+  <tr>
+    <td><img src="assets/ib.gif"/></td>
+    <td><img src="assets/pc.gif"/></td>
+  </tr>
+</table>
+
+<table>
+  <tr>
     <th>walk</th>
     <th>jump</th>
     <th>dance</th>
