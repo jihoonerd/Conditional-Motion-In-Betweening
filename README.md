@@ -15,9 +15,9 @@ Official implementation of paper: Conditional Motion In-betweeening.
     <th>dance</th>
   </tr>
   <tr>
-    <td></td>
-    <td></td>
-    <td></td>
+    <td><img src="assets/walk.gif"/></td>
+    <td><img src="assets/jump.gif"/></td>
+    <td><img src="assets/dance.gif"/></td>
   </tr>
 </table>
 
