@@ -67,7 +67,7 @@ You can use `run_cmib.py` for inference. Please refer to help page of `run_cmib.
 python run_cmib.py --help
 ```
 
-## Citation
+## Reference
 
 * LAFAN1 Dataset
   ```
@@ -81,6 +81,18 @@ python run_cmib.py --help
   year      = {2020}
   }
   ```
+
+## Citation
+```
+@misc{kim2022conditional,
+      title={Conditional Motion In-betweening}, 
+      author={Jihoon Kim and Taehyun Byun and Seungyoun Shin and Jungdam Won and Sungjoon Choi},
+      year={2022},
+      eprint={2202.04307},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
+}
+```
 
 ## Author
 
