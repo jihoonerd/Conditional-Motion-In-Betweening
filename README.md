@@ -8,6 +8,19 @@ Official implementation of paper: Conditional Motion In-betweeening.
   <img src="assets/graphical_abstract.jpg" alt="Graphical Abstract"/>
 </p>
 
+<table>
+  <tr>
+    <th>walk</th>
+    <th>jump</th>
+    <th>dance</th>
+  </tr>
+  <tr>
+    <td></td>
+    <td></td>
+    <td></td>
+  </tr>
+</table>
+
 ## Environments
 
 This repo is tested on following environment:
