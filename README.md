@@ -2,7 +2,7 @@
 
 Official implementation of paper: Conditional Motion In-betweeening.
 
-[Paper(Submitted)]() | [Project Page](https://jihoonerd.github.io/Conditional-Motion-In-Betweening/) | [YouTube](https://youtu.be/XAELcHOREJ8)
+[Paper](https://arxiv.org/abs/2202.04307?context=cs.AI) | [Project Page](https://jihoonerd.github.io/Conditional-Motion-In-Betweening/) | [YouTube](https://youtu.be/XAELcHOREJ8)
 
 <p align="center">
   <img src="assets/graphical_abstract.jpg" alt="Graphical Abstract"/>
