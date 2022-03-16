@@ -41,7 +41,7 @@ def test(opt, device):
 
     # Load LAFAN Dataset
     Path(opt.processed_data_dir).mkdir(parents=True, exist_ok=True)
-    test_window = ckpt['horizon'] - 1 + 10
+    test_window = ckpt['horizon'] - 1 + 10  # Use default test window for 30-frame benchamrk setting.
     lafan_dataset = LAFAN1Dataset(lafan_path=opt.data_path, processed_data_dir=opt.processed_data_dir, train=False, device=device, window=test_window, dataset=opt.dataset)
 
     # Extract stats
