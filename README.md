@@ -57,7 +57,7 @@ This repo is tested on following environment:
 
 ## Trained Weights
 
-You can download trained weights from [here](https://drive.google.com/drive/folders/1_cAhuBxbic3rgPdyrR49kvMnA263bYmi?usp=sharing).
+You can download trained weights from [here](https://works.do/FCqKVjy).
 
 ## Train from Scratch
 
