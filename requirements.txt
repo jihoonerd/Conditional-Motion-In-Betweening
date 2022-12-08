@@ -1,5 +1,5 @@
 black==21.12b0
-certifi==2021.10.8
+certifi==2022.12.7
 charset-normalizer==2.0.9
 click==8.0.3
 configparser==5.2.0
