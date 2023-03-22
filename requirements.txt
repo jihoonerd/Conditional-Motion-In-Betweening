@@ -39,7 +39,7 @@ subprocess32==3.5.4
 termcolor==1.1.0
 threadpoolctl==3.0.0
 tomli==1.2.3
-torch==1.10.1+cu113
+torch==1.13.1
 torchaudio==0.10.1+cu113
 torchvision==0.11.2+cu113
 tqdm==4.62.3
